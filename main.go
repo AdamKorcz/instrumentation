@@ -11,10 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	//"strconv"
-
-	//"reflect"
-	//bytesize "github.com/inhies/go-bytesize"
 )
 
 type Walker struct {
@@ -36,11 +32,6 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 					if aa.Sel.Name == "ReadAll" {
 						// Now we have found an io.ReadAll()
 						aa.X.(*ast.Ident).Name = "io2"
-						//aa.Sel.Name = "IoReadAll"
-						//fmt.Println("We have a match")
-						//fmt.Println("SELECTOR: ", reflect.TypeOf(aa.X), reflect.TypeOf(aa.Sel))
-						//fmt.Println(aa.X.(*ast.Ident))
-						//fmt.Println(aa.Sel.Name)
 						return nil
 						err := printer.Fprint(os.Stdout, walker.fset, walker.file)
 						if err != nil {
@@ -51,13 +42,6 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 
 			}
 		}
-	/*case *ast.SelectorExpr:
-	if pack, ok := n.X.(*ast.Ident); ok {
-		if pack.Name == "io" && n.Sel.Name != "ReadAll" {
-			fmt.Println("We have a call to", n.Sel.Name)
-		}
-	}
-	fmt.Println(reflect.TypeOf(n.X), n.X.(*ast.Ident).Name)*/
 	default:
 		//fmt.Println(reflect.TypeOf(n))
 	}
@@ -102,34 +86,23 @@ func isGoFile(info os.FileInfo) bool {
 // Check whether a parsed file uses the "io" package
 func (walker *Walker) usesIoPackage(file *ast.File) bool {
 	return astutil.UsesImport(walker.file, "io")
-	if len(file.Imports) == 0 {
-		return false
-	}
-	for _, i := range file.Imports {
-		if i != nil {
-			if i.Path.Value == "\"io\"" {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func (walker *Walker) addNewIoImport() {
-	// if a new package should be added:
+	// Add new package:
 	if walker.addNewIoPackage {
-		fmt.Println("heree")
-		astutil.AddImport(walker.fset, walker.file, "io2")
+		astutil.AddNamedImport(walker.fset, walker.file, "io2", "github.com/AdamKorcz/bugdetectors/io")
 		return
 	}
 
-	// if we should change "io" to the new package
-	astutil.RewriteImport(walker.fset, walker.file, "io", "io2")
+	// Change "io" to the new package
+	astutil.DeleteImport(walker.fset, walker.file, "io")
+	astutil.AddNamedImport(walker.fset, walker.file, "io2", "github.com/AdamKorcz/bugdetectors/io")
 	return
 }
 
 func main() {
-	filepath.Walk("test", func(path string, info os.FileInfo, err error) error {
+	filepath.Walk("/src/kubeedge", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Println(err)
 			return err
@@ -165,14 +138,16 @@ func main() {
 
 		// Now walk and replace
 		ast.Walk(walker, walker.file)
+		var buf bytes.Buffer
+		printer.Fprint(&buf, walker.fset, walker.file)
+
 		os.Remove(path)
 		newFile, err := os.Create(path)
 		if err != nil {
 			panic(err)
 		}
 		defer newFile.Close()
-		var buf bytes.Buffer
-		printer.Fprint(newfile, walker.fset, walker.file)
+		newFile.Write(buf.Bytes())
 		return nil
 	})
 	return
