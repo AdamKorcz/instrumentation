@@ -103,13 +103,29 @@ func (walker *Walker) addNewIoImport() {
 	return
 }
 
-func main() {
-	filepath.Walk("/src/kubeedge", func(path string, info os.FileInfo, err error) error {
+func isTroubledDependency(path string) bool {
+	// Build tags in std lib cause troubles
+	if strings.Contains(path, "golang.org") {
+		return true
+	}
+	// C bindings cause trouble
+	if strings.Contains(path, "github.com/mattn/go-sqlite3") {
+		return true
+	}
+	return false
+}
+
+func rewrite(p string) {
+	filepath.Walk(p, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Println(err)
 			return err
 		}
 		if !isGoFile(info) {
+			return nil
+		}
+
+		if isTroubledDependency(path) {
 			return nil
 		}
 
@@ -153,5 +169,13 @@ func main() {
 		newFile.Write(buf.Bytes())
 		return nil
 	})
+}
+
+func main() {
+	if len(os.Args)!=2 {
+		panic("A path should be added")
+	}
+	dir := os.Args[1]
+	rewrite(dir)
 	return
 }
