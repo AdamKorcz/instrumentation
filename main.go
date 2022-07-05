@@ -9,9 +9,11 @@ import (
 	"os"
 	"strings"
 	"go/ast"
+	"golang.org/x/tools/go/ast/astutil"
 	"go/parser"
 	"go/token"
 	"go/printer"
+	//"strconv"
 
 	"runtime/debug"
 	//"reflect"
@@ -34,7 +36,6 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 	}
 	switch n := node.(type) {
 	case *ast.CallExpr:
-		//fmt.Println(reflect.TypeOf(n.Fun))
 		if aa, ok := n.Fun.(*ast.SelectorExpr); ok {
 			if _, ok := aa.X.(*ast.Ident); ok {
 				if aa.X.(*ast.Ident).Name == "io" {
@@ -69,7 +70,8 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 	return walker
 }
 
-
+// This type is only used to check whether a file uses other
+// Apis of the "io" package besides "ReadAll".
 type IoUsageChecker struct {
 	UsesOtherIo bool
 }
@@ -111,37 +113,67 @@ func one(r io.Reader){
 	two(r)
 }
 
+// Checks whether a path is a non-test go file
+func isGoFile(info os.FileInfo) bool {
+    if info.IsDir() {
+    	return false
+    }
+    ext := filepath.Ext(info.Name())
+    if ext != ".go" || strings.Contains(info.Name(), "_test.go") {
+    	return false
+    }
+    return true
+}
+
+// Check whether a parsed file uses the "io" package
+func (walker *Walker) usesIoPackage(file *ast.File) bool {
+	return astutil.UsesImport(walker.file, "io")
+	if len(file.Imports) == 0 {
+		return false
+	}
+	for _, i := range file.Imports {
+		if i != nil {
+			if i.Path.Value == "\"io\"" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (walker *Walker) addNewIoImport() {
+	// if a new package should be added:
+	if walker.addNewIoPackage {
+		fmt.Println("heree")
+		astutil.AddImport(walker.fset, walker.file, "io2")
+		return
+	}
+
+	// if we should change "io" to the new package
+	astutil.RewriteImport(walker.fset, walker.file, "io", "io2")
+	return
+}
+
 func main(){
-	filepath.Walk("/tmp/kubeedge", func(path string, info os.FileInfo, err error) error {
+	filepath.Walk("test", func(path string, info os.FileInfo, err error) error {
         if err != nil {
             fmt.Println(err)
             return err
         }
-        if info.IsDir() {
+        if !isGoFile(info) {
         	return nil
         }
-        ext := filepath.Ext(info.Name())
-        if ext != ".go" || strings.Contains(info.Name(), "_test.go") {
-        	return nil
-        }
+
    		fset := token.NewFileSet()
 		f, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			return nil
 		}
+		walker := &Walker{fset: fset, file: f}
 
 		// Check whether a file the "io" import. 
 		// Skip if it doesn't
-		var hasIo bool
-		hasIo = false
-		for _, i := range f.Imports {
-			if i != nil {
-				if i.Path.Value == "\"io\"" {
-					hasIo = true
-				}
-			}
-		}
-		if !hasIo {
+		if !walker.usesIoPackage(f) {
 			return nil
 		}
 
@@ -152,16 +184,18 @@ func main(){
 		ioWalker := &IoUsageChecker{}
 		ast.Walk(ioWalker, f)
 
-		walker := &Walker{fset: fset, file: f}
 
 		// If the file ueses other "io" apis, then we set that
 		// we should add the new package instead of replacing
 		walker.addNewIoPackage = ioWalker.UsesOtherIo
+		walker.addNewIoImport()
 
 		// Now walk and replace
 		ast.Walk(walker, walker.file)
+		printer.Fprint(os.Stdout, walker.fset, walker.file)
         return nil
     })
+    return
 	b := []byte{100, 101}
 	r := bytes.NewReader(bytes.Repeat(b, 1000000000))
 	one(r)
