@@ -8,20 +8,13 @@ import (
 	"go/printer"
 	"go/token"
 	"golang.org/x/tools/go/ast/astutil"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 	//"strconv"
 
-	"runtime/debug"
 	//"reflect"
 	//bytesize "github.com/inhies/go-bytesize"
-)
-
-var (
-	maxBufferSize = 1000000000
 )
 
 type Walker struct {
@@ -43,7 +36,7 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 					if aa.Sel.Name == "ReadAll" {
 						// Now we have found an io.ReadAll()
 						aa.X.(*ast.Ident).Name = "io2"
-						aa.Sel.Name = "IoReadAll"
+						//aa.Sel.Name = "IoReadAll"
 						//fmt.Println("We have a match")
 						//fmt.Println("SELECTOR: ", reflect.TypeOf(aa.X), reflect.TypeOf(aa.Sel))
 						//fmt.Println(aa.X.(*ast.Ident))
@@ -92,26 +85,6 @@ func (walker *IoUsageChecker) Visit(node ast.Node) ast.Visitor {
 		}
 	}
 	return walker
-}
-
-func two(r io.Reader) {
-	start := time.Now()
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(io.LimitReader(r, 4500000000))
-	//fmt.Println("len: ", bytesize.New(float64(buf.Len())).String())
-	//fmt.Println("len2: ", buf.Len())
-	bufferLength := buf.Len()
-	elapsed := time.Since(start)
-	fmt.Println(elapsed)
-	if bufferLength > maxBufferSize {
-		debug.PrintStack()
-		panic("A large buffer can be passed to an API that will exhaust this machines memory")
-	}
-
-}
-
-func one(r io.Reader) {
-	two(r)
 }
 
 // Checks whether a path is a non-test go file
@@ -192,11 +165,15 @@ func main() {
 
 		// Now walk and replace
 		ast.Walk(walker, walker.file)
-		printer.Fprint(os.Stdout, walker.fset, walker.file)
+		os.Remove(path)
+		newFile, err := os.Create(path)
+		if err != nil {
+			panic(err)
+		}
+		defer newFile.Close()
+		var buf bytes.Buffer
+		printer.Fprint(newfile, walker.fset, walker.file)
 		return nil
 	})
 	return
-	b := []byte{100, 101}
-	r := bytes.NewReader(bytes.Repeat(b, 1000000000))
-	one(r)
 }
