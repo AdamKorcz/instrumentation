@@ -3,21 +3,20 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io"
-	"time"
-	"path/filepath"
-	"os"
-	"strings"
 	"go/ast"
-	"golang.org/x/tools/go/ast/astutil"
 	"go/parser"
-	"go/token"
 	"go/printer"
+	"go/token"
+	"golang.org/x/tools/go/ast/astutil"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 	//"strconv"
 
 	"runtime/debug"
 	//"reflect"
-
 	//bytesize "github.com/inhies/go-bytesize"
 )
 
@@ -26,10 +25,11 @@ var (
 )
 
 type Walker struct {
-	fset *token.FileSet
-	file *ast.File
+	fset            *token.FileSet
+	file            *ast.File
 	addNewIoPackage bool
 }
+
 func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 	if node == nil {
 		return walker
@@ -43,6 +43,7 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 					if aa.Sel.Name == "ReadAll" {
 						// Now we have found an io.ReadAll()
 						aa.X.(*ast.Ident).Name = "io2"
+						aa.Sel.Name = "IoReadAll"
 						//fmt.Println("We have a match")
 						//fmt.Println("SELECTOR: ", reflect.TypeOf(aa.X), reflect.TypeOf(aa.Sel))
 						//fmt.Println(aa.X.(*ast.Ident))
@@ -50,7 +51,7 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 						return nil
 						err := printer.Fprint(os.Stdout, walker.fset, walker.file)
 						if err != nil {
-						    fmt.Println(err)
+							fmt.Println(err)
 						}
 					}
 				}
@@ -58,12 +59,12 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 			}
 		}
 	/*case *ast.SelectorExpr:
-		if pack, ok := n.X.(*ast.Ident); ok {
-			if pack.Name == "io" && n.Sel.Name != "ReadAll" {
-				fmt.Println("We have a call to", n.Sel.Name)
-			}
+	if pack, ok := n.X.(*ast.Ident); ok {
+		if pack.Name == "io" && n.Sel.Name != "ReadAll" {
+			fmt.Println("We have a call to", n.Sel.Name)
 		}
-		fmt.Println(reflect.TypeOf(n.X), n.X.(*ast.Ident).Name)*/
+	}
+	fmt.Println(reflect.TypeOf(n.X), n.X.(*ast.Ident).Name)*/
 	default:
 		//fmt.Println(reflect.TypeOf(n))
 	}
@@ -76,7 +77,7 @@ type IoUsageChecker struct {
 	UsesOtherIo bool
 }
 
-// Checks whether a file uses any other Apis from the "io" 
+// Checks whether a file uses any other Apis from the "io"
 // besides "ReadAll"
 func (walker *IoUsageChecker) Visit(node ast.Node) ast.Visitor {
 	if node == nil {
@@ -102,27 +103,27 @@ func two(r io.Reader) {
 	bufferLength := buf.Len()
 	elapsed := time.Since(start)
 	fmt.Println(elapsed)
-	if bufferLength>maxBufferSize {
+	if bufferLength > maxBufferSize {
 		debug.PrintStack()
 		panic("A large buffer can be passed to an API that will exhaust this machines memory")
 	}
-	
+
 }
 
-func one(r io.Reader){
+func one(r io.Reader) {
 	two(r)
 }
 
 // Checks whether a path is a non-test go file
 func isGoFile(info os.FileInfo) bool {
-    if info.IsDir() {
-    	return false
-    }
-    ext := filepath.Ext(info.Name())
-    if ext != ".go" || strings.Contains(info.Name(), "_test.go") {
-    	return false
-    }
-    return true
+	if info.IsDir() {
+		return false
+	}
+	ext := filepath.Ext(info.Name())
+	if ext != ".go" || strings.Contains(info.Name(), "_test.go") {
+		return false
+	}
+	return true
 }
 
 // Check whether a parsed file uses the "io" package
@@ -154,24 +155,24 @@ func (walker *Walker) addNewIoImport() {
 	return
 }
 
-func main(){
+func main() {
 	filepath.Walk("test", func(path string, info os.FileInfo, err error) error {
-        if err != nil {
-            fmt.Println(err)
-            return err
-        }
-        if !isGoFile(info) {
-        	return nil
-        }
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+		if !isGoFile(info) {
+			return nil
+		}
 
-   		fset := token.NewFileSet()
+		fset := token.NewFileSet()
 		f, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			return nil
 		}
 		walker := &Walker{fset: fset, file: f}
 
-		// Check whether a file the "io" import. 
+		// Check whether a file the "io" import.
 		// Skip if it doesn't
 		if !walker.usesIoPackage(f) {
 			return nil
@@ -179,11 +180,10 @@ func main(){
 
 		// Check whether a file uses any other parts of the
 		// "io" package besides ReadAll(). This is to know
-		// later whether "io" should be replaced or new 
+		// later whether "io" should be replaced or new
 		// test package should be added
 		ioWalker := &IoUsageChecker{}
 		ast.Walk(ioWalker, f)
-
 
 		// If the file ueses other "io" apis, then we set that
 		// we should add the new package instead of replacing
@@ -193,9 +193,9 @@ func main(){
 		// Now walk and replace
 		ast.Walk(walker, walker.file)
 		printer.Fprint(os.Stdout, walker.fset, walker.file)
-        return nil
-    })
-    return
+		return nil
+	})
+	return
 	b := []byte{100, 101}
 	r := bytes.NewReader(bytes.Repeat(b, 1000000000))
 	one(r)
