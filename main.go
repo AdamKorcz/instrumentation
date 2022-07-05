@@ -17,6 +17,7 @@ type Walker struct {
 	fset            *token.FileSet
 	file            *ast.File
 	addNewIoPackage bool
+	hasReadAll		bool
 }
 
 func (walker *Walker) Visit(node ast.Node) ast.Visitor {
@@ -31,6 +32,7 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 					//fmt.Println("Counter")
 					if aa.Sel.Name == "ReadAll" {
 						// Now we have found an io.ReadAll()
+						walker.hasReadAll = true
 						aa.X.(*ast.Ident).Name = "io2"
 						return nil
 						err := printer.Fprint(os.Stdout, walker.fset, walker.file)
@@ -116,7 +118,7 @@ func main() {
 		if err != nil {
 			return nil
 		}
-		walker := &Walker{fset: fset, file: f}
+		walker := &Walker{fset: fset, file: f, hasReadAll: false}
 
 		// Check whether a file the "io" import.
 		// Skip if it doesn't
@@ -131,13 +133,14 @@ func main() {
 		ioWalker := &IoUsageChecker{}
 		ast.Walk(ioWalker, f)
 
-		// If the file ueses other "io" apis, then we set that
-		// we should add the new package instead of replacing
-		walker.addNewIoPackage = ioWalker.UsesOtherIo
-		walker.addNewIoImport()
-
 		// Now walk and replace
 		ast.Walk(walker, walker.file)
+
+		if walker.hasReadAll {
+			// add imports
+			walker.addNewIoPackage = ioWalker.UsesOtherIo
+			walker.addNewIoImport()
+		}
 		var buf bytes.Buffer
 		printer.Fprint(&buf, walker.fset, walker.file)
 
