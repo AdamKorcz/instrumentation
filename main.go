@@ -17,7 +17,28 @@ type Walker struct {
 	fset            *token.FileSet
 	file            *ast.File
 	addNewIoPackage bool
-	hasReadAll		bool
+	hasReadAll      bool
+	src             string // .go file being analyzed
+
+}
+
+// We use the string NEW_LINE instead of "\n"
+// This is to not add extra lines in the source file.
+// When the message gets printed, we should do a search
+// and replace to correctly format the message.
+func getStringVersion(n ast.Node, src []byte, fset *token.FileSet) string {
+	start := n.Pos()
+	end := n.End()
+	startf := fset.Position(n.Pos())
+
+	var returnString strings.Builder
+
+	// wrap the codeSnippet in quotes:
+	returnString.WriteString("\"")
+	returnString.WriteString(fmt.Sprintf("%sNEW_LINE", startf))
+	returnString.WriteString(string(src[start-1 : end-1]))
+	returnString.WriteString("\"")
+	return returnString.String()
 }
 
 func (walker *Walker) Visit(node ast.Node) ast.Visitor {
@@ -31,11 +52,30 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 				if aa.X.(*ast.Ident).Name == "io" {
 					//fmt.Println("Counter")
 					if aa.Sel.Name == "ReadAll" {
+
 						// Now we have found an io.ReadAll()
+
+						// First we obtain the line number
+						// and code.
+						var codeSnippet string
+						src, err := os.ReadFile(walker.src)
+						if err != nil {
+							codeSnippet = "Could not generate code"
+						}
+						if codeSnippet != "Could not generate code" {
+							codeSnippet = getStringVersion(n, src, walker.fset)
+						}
+
 						walker.hasReadAll = true
 						aa.X.(*ast.Ident).Name = "io2"
+
+						// Add the code line to the function call
+						n.Args = append(n.Args, ast.NewIdent(codeSnippet))
+
 						return nil
-						err := printer.Fprint(os.Stdout, walker.fset, walker.file)
+						// This prints out the end result.
+						// It is useful for testing.
+						err = printer.Fprint(os.Stdout, walker.fset, walker.file)
 						if err != nil {
 							fmt.Println(err)
 						}
@@ -103,6 +143,10 @@ func (walker *Walker) addNewIoImport() {
 	return
 }
 
+// Some packages will require a little more work
+// There are different reasons for this, with eg. C
+// bindings and build tags. For now we just ignore
+// these dependencies.
 func isTroubledDependency(path string) bool {
 	// Build tags in std lib cause troubles
 	if strings.Contains(path, "golang.org") {
@@ -134,7 +178,7 @@ func rewrite(p string) {
 		if err != nil {
 			return nil
 		}
-		walker := &Walker{fset: fset, file: f, hasReadAll: false}
+		walker := &Walker{fset: fset, file: f, hasReadAll: false, src: path}
 
 		// Check whether a file the "io" import.
 		// Skip if it doesn't
@@ -159,7 +203,7 @@ func rewrite(p string) {
 		}
 		var buf bytes.Buffer
 		printer.Fprint(&buf, walker.fset, walker.file)
-
+		//return nil // uncomment to overwrite files with modified source code
 		os.Remove(path)
 		newFile, err := os.Create(path)
 		if err != nil {
@@ -172,7 +216,7 @@ func rewrite(p string) {
 }
 
 func main() {
-	if len(os.Args)!=2 {
+	if len(os.Args) != 2 {
 		panic("A path should be added")
 	}
 	dir := os.Args[1]
