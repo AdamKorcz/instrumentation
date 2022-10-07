@@ -179,6 +179,7 @@ func (walker *Walker) addNewIoImport() {
 
 	// Change "io" to the new package
 	astutil.DeleteImport(walker.fset, walker.file, "io")
+	astutil.AddNamedImport(walker.fset, walker.file, "_", "io")
 	astutil.AddNamedImport(walker.fset, walker.file, "io2", "github.com/AdamKorcz/bugdetectors/io")
 	return
 }
@@ -192,6 +193,7 @@ func (walker *Walker) addNewIoutilImport() {
 
 	// Change "io" to the new package
 	astutil.DeleteImport(walker.fset, walker.file, "io/ioutil")
+	astutil.AddNamedImport(walker.fset, walker.file, "_", "io/ioutil")
 	astutil.AddNamedImport(walker.fset, walker.file, "ioutil2", "github.com/AdamKorcz/bugdetectors/ioutil")
 	return
 }
