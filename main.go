@@ -14,11 +14,13 @@ import (
 )
 
 type Walker struct {
-	fset            *token.FileSet
-	file            *ast.File
-	addNewIoPackage bool
-	hasReadAll      bool
-	src             string // .go file being analyzed
+	fset                *token.FileSet
+	file                *ast.File
+	addNewIoPackage     bool
+	addNewIoutilPackage bool
+	hasIoReadall        bool
+	hasIoutilReadall    bool
+	src                 string // .go file being analyzed
 
 }
 
@@ -41,6 +43,68 @@ func getStringVersion(n ast.Node, src []byte, fset *token.FileSet) string {
 	return returnString.String()
 }
 
+func (walker *Walker) rewriteIoReadAll(n ast.Node, aa *ast.SelectorExpr) {
+	//fmt.Println("Counter")
+	if aa.Sel.Name == "ReadAll" {
+		// Now we have found an io.ReadAll()
+
+		// First we obtain the line number
+		// and code.
+		var codeSnippet string
+		src, err := os.ReadFile(walker.src)
+		if err != nil {
+			codeSnippet = "Could not generate code"
+		}
+		if codeSnippet != "Could not generate code" {
+			codeSnippet = getStringVersion(aa, src, walker.fset)
+		}
+		walker.hasIoReadall = true
+		aa.X.(*ast.Ident).Name = "io2"
+
+		// Add the code line to the function call
+		n.(*ast.CallExpr).Args = append(n.(*ast.CallExpr).Args, ast.NewIdent(codeSnippet))
+
+		return
+		// This prints out the end result.
+		// It is useful for testing.
+		err = printer.Fprint(os.Stdout, walker.fset, walker.file)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+}
+
+func (walker *Walker) rewriteIoutilReadAll(n ast.Node, aa *ast.SelectorExpr) {
+	//fmt.Println("Counter")
+	if aa.Sel.Name == "ReadAll" {
+		// Now we have found an io.ReadAll()
+
+		// First we obtain the line number
+		// and code.
+		var codeSnippet string
+		src, err := os.ReadFile(walker.src)
+		if err != nil {
+			codeSnippet = "Could not generate code"
+		}
+		if codeSnippet != "Could not generate code" {
+			codeSnippet = getStringVersion(n, src, walker.fset)
+		}
+		walker.hasIoutilReadall = true
+		aa.X.(*ast.Ident).Name = "ioutil2"
+
+		// Add the code line to the function call
+		n.(*ast.CallExpr).Args = append(n.(*ast.CallExpr).Args, ast.NewIdent(codeSnippet))
+
+		return
+		// This prints out the end result.
+		// It is useful for testing.
+		err = printer.Fprint(os.Stdout, walker.fset, walker.file)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+}
+
 func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 	if node == nil {
 		return walker
@@ -50,36 +114,10 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 		if aa, ok := n.Fun.(*ast.SelectorExpr); ok {
 			if _, ok := aa.X.(*ast.Ident); ok {
 				if aa.X.(*ast.Ident).Name == "io" {
-					//fmt.Println("Counter")
-					if aa.Sel.Name == "ReadAll" {
-
-						// Now we have found an io.ReadAll()
-
-						// First we obtain the line number
-						// and code.
-						var codeSnippet string
-						src, err := os.ReadFile(walker.src)
-						if err != nil {
-							codeSnippet = "Could not generate code"
-						}
-						if codeSnippet != "Could not generate code" {
-							codeSnippet = getStringVersion(n, src, walker.fset)
-						}
-
-						walker.hasReadAll = true
-						aa.X.(*ast.Ident).Name = "io2"
-
-						// Add the code line to the function call
-						n.Args = append(n.Args, ast.NewIdent(codeSnippet))
-
-						return nil
-						// This prints out the end result.
-						// It is useful for testing.
-						err = printer.Fprint(os.Stdout, walker.fset, walker.file)
-						if err != nil {
-							fmt.Println(err)
-						}
-					}
+					walker.rewriteIoReadAll(n, aa)
+				}
+				if aa.X.(*ast.Ident).Name == "ioutil" {
+					walker.rewriteIoutilReadAll(n, aa)
 				}
 
 			}
@@ -93,7 +131,8 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 // This type is only used to check whether a file uses other
 // Apis of the "io" package besides "ReadAll".
 type IoUsageChecker struct {
-	UsesOtherIo bool
+	UsesOtherIo     bool
+	UsesOtherIoutil bool
 }
 
 // Checks whether a file uses any other Apis from the "io"
@@ -105,8 +144,12 @@ func (walker *IoUsageChecker) Visit(node ast.Node) ast.Visitor {
 	switch n := node.(type) {
 	case *ast.SelectorExpr:
 		if pack, ok := n.X.(*ast.Ident); ok {
+			fmt.Println(pack.Name)
 			if pack.Name == "io" && n.Sel.Name != "ReadAll" {
 				walker.UsesOtherIo = true
+			}
+			if pack.Name == "ioutil" && n.Sel.Name != "ReadAll" {
+				walker.UsesOtherIoutil = true
 			}
 		}
 	}
@@ -140,6 +183,19 @@ func (walker *Walker) addNewIoImport() {
 	// Change "io" to the new package
 	astutil.DeleteImport(walker.fset, walker.file, "io")
 	astutil.AddNamedImport(walker.fset, walker.file, "io2", "github.com/AdamKorcz/bugdetectors/io")
+	return
+}
+
+func (walker *Walker) addNewIoutilImport() {
+	// Add new package:
+	if walker.addNewIoPackage {
+		astutil.AddNamedImport(walker.fset, walker.file, "ioutil2", "github.com/AdamKorcz/bugdetectors/ioutil")
+		return
+	}
+
+	// Change "io" to the new package
+	astutil.DeleteImport(walker.fset, walker.file, "io/ioutil")
+	astutil.AddNamedImport(walker.fset, walker.file, "ioutil2", "github.com/AdamKorcz/bugdetectors/ioutil")
 	return
 }
 
@@ -178,7 +234,7 @@ func rewrite(p string) {
 		if err != nil {
 			return nil
 		}
-		walker := &Walker{fset: fset, file: f, hasReadAll: false, src: path}
+		walker := &Walker{fset: fset, file: f, hasIoReadall: false, hasIoutilReadall: false, src: path}
 
 		// Check whether a file the "io" import.
 		// Skip if it doesn't
@@ -196,15 +252,18 @@ func rewrite(p string) {
 		// Now walk and replace
 		ast.Walk(walker, walker.file)
 
-		if walker.hasReadAll {
+		if walker.hasIoReadall || walker.hasIoutilReadall {
 			// add imports
 			walker.addNewIoPackage = ioWalker.UsesOtherIo
+			walker.addNewIoutilPackage = ioWalker.UsesOtherIoutil
 			walker.addNewIoImport()
+			walker.addNewIoutilImport()
 		}
 		var buf bytes.Buffer
 		printer.Fprint(&buf, walker.fset, walker.file)
 		//return nil // uncomment to overwrite files with modified source code
 		os.Remove(path)
+		fmt.Println("Creating")
 		newFile, err := os.Create(path)
 		if err != nil {
 			panic(err)
