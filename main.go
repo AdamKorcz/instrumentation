@@ -44,7 +44,6 @@ func getStringVersion(n ast.Node, src []byte, fset *token.FileSet) string {
 }
 
 func (walker *Walker) rewriteIoReadAll(n ast.Node, aa *ast.SelectorExpr) {
-	//fmt.Println("Counter")
 	if aa.Sel.Name == "ReadAll" {
 		// Now we have found an io.ReadAll()
 
@@ -75,9 +74,8 @@ func (walker *Walker) rewriteIoReadAll(n ast.Node, aa *ast.SelectorExpr) {
 }
 
 func (walker *Walker) rewriteIoutilReadAll(n ast.Node, aa *ast.SelectorExpr) {
-	//fmt.Println("Counter")
 	if aa.Sel.Name == "ReadAll" {
-		// Now we have found an io.ReadAll()
+		// Now we have found an ioutil.ReadAll()
 
 		// First we obtain the line number
 		// and code.
@@ -144,7 +142,6 @@ func (walker *IoUsageChecker) Visit(node ast.Node) ast.Visitor {
 	switch n := node.(type) {
 	case *ast.SelectorExpr:
 		if pack, ok := n.X.(*ast.Ident); ok {
-			fmt.Println(pack.Name)
 			if pack.Name == "io" && n.Sel.Name != "ReadAll" {
 				walker.UsesOtherIo = true
 			}
@@ -263,7 +260,6 @@ func rewrite(p string) {
 		printer.Fprint(&buf, walker.fset, walker.file)
 		//return nil // uncomment to overwrite files with modified source code
 		os.Remove(path)
-		fmt.Println("Creating")
 		newFile, err := os.Create(path)
 		if err != nil {
 			panic(err)
