@@ -249,11 +249,15 @@ func rewrite(p string) {
 		// Now walk and replace
 		ast.Walk(walker, walker.file)
 
-		if walker.hasIoReadall || walker.hasIoutilReadall {
+		if walker.hasIoReadall {
 			// add imports
 			walker.addNewIoPackage = ioWalker.UsesOtherIo
-			walker.addNewIoutilPackage = ioWalker.UsesOtherIoutil
 			walker.addNewIoImport()
+		}
+
+		if walker.hasIoutilReadall {
+			// add imports
+			walker.addNewIoutilPackage = ioWalker.UsesOtherIoutil
 			walker.addNewIoutilImport()
 		}
 		var buf bytes.Buffer
