@@ -4,14 +4,32 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
+	"go/importer"
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"go/types"
 	"golang.org/x/tools/go/ast/astutil"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
 )
+
+var (
+	devMode = true
+)
+
+// LoadMode controls the amount of details to return when loading the packages
+const LoadMode = packages.NeedName |
+	packages.NeedFiles |
+	packages.NeedCompiledGoFiles |
+	packages.NeedImports |
+	packages.NeedTypes |
+	packages.NeedTypesSizes |
+	packages.NeedTypesInfo |
+	packages.NeedSyntax
 
 type Walker struct {
 	fset                *token.FileSet
@@ -21,7 +39,7 @@ type Walker struct {
 	hasIoReadall        bool
 	hasIoutilReadall    bool
 	src                 string // .go file being analyzed
-
+	typesInfo           *types.Info
 }
 
 // We use the string NEW_LINE instead of "\n"
@@ -103,6 +121,52 @@ func (walker *Walker) rewriteIoutilReadAll(n ast.Node, aa *ast.SelectorExpr) {
 	}
 }
 
+func (walker *Walker) rewriteBufferBytes(n ast.Node, aa *ast.SelectorExpr) {
+	// Now we have found a Buffer.Bytes()
+
+	// First we obtain the line number
+	// and code.
+	var codeSnippet string
+	src, err := os.ReadFile(walker.src)
+	if err != nil {
+		codeSnippet = "Could not generate code"
+	}
+	if codeSnippet != "Could not generate code" {
+		codeSnippet = getStringVersion(n, src, walker.fset)
+	}
+	astutil.AddNamedImport(walker.fset, walker.file, "customBytes", "github.com/AdamKorcz/bugdetectors/bytes")
+
+	// Add the code line to the function call
+	fmt.Println("Modifying")
+
+	// Copy the existing function call
+	x := aa.X.(*ast.Ident).Name
+	name := aa.Sel.Name
+
+	// This naming is a bit hacky. TODO: Clean it up.
+	args := []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent(x), Sel: ast.NewIdent(name + "()")}}
+	args = append(args, ast.NewIdent(codeSnippet))
+
+	// Wrap the existing function call in customBytes.CheckLen()
+	aa.X.(*ast.Ident).Name = "customBytes"
+	aa.Sel.Name = "CheckLen"
+	n.(*ast.CallExpr).Args = args
+
+	// This prints out the end result.
+	// It is useful for testing.
+	if !devMode {
+		return
+	}
+	err = printer.Fprint(os.Stdout, walker.fset, walker.file)
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+func (walker *Walker) typeName(expr ast.Expr) string {
+	return walker.typesInfo.TypeOf(expr).String()
+}
+
 func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 	if node == nil {
 		return walker
@@ -116,6 +180,12 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 				}
 				if aa.X.(*ast.Ident).Name == "ioutil" {
 					walker.rewriteIoutilReadAll(n, aa)
+				}
+				if aa.Sel.Name == "Bytes" {
+					if walker.typeName(aa.X) == "bytes.Buffer" {
+						fmt.Println("Have a Bytes")
+						walker.rewriteBufferBytes(n, aa)
+					}
 				}
 
 			}
@@ -238,7 +308,26 @@ func rewrite(p string) {
 		if err != nil {
 			return nil
 		}
-		walker := &Walker{fset: fset, file: f, hasIoReadall: false, hasIoutilReadall: false, src: path}
+
+		pkgName := f.Name.Name
+
+		typesInfo := types.Info{
+			Types: make(map[ast.Expr]types.TypeAndValue),
+			Defs:  make(map[*ast.Ident]types.Object),
+			Uses:  make(map[*ast.Ident]types.Object),
+		}
+		conf := types.Config{Importer: importer.Default()}
+		_, err = conf.Check(pkgName, fset, []*ast.File{f}, &typesInfo)
+		if err != nil {
+			panic(err)
+		}
+
+		walker := &Walker{fset: fset,
+			file:             f,
+			hasIoReadall:     false,
+			hasIoutilReadall: false,
+			src:              path,
+			typesInfo:        &typesInfo}
 
 		// Check whether a file the "io" import.
 		// Skip if it doesn't
@@ -271,7 +360,9 @@ func rewrite(p string) {
 		walker.deleteImports()
 		var buf bytes.Buffer
 		printer.Fprint(&buf, walker.fset, walker.file)
-		//return nil // uncomment to overwrite files with modified source code
+		if devMode {
+			return nil
+		}
 		os.Remove(path)
 		newFile, err := os.Create(path)
 		if err != nil {
