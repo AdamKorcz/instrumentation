@@ -29,7 +29,10 @@ const LoadMode = packages.NeedName |
 	packages.NeedTypes |
 	packages.NeedTypesSizes |
 	packages.NeedTypesInfo |
-	packages.NeedSyntax
+	packages.NeedSyntax |
+	packages.NeedModule |
+	packages.NeedEmbedPatterns |
+	packages.NeedEmbedFiles
 
 type Walker struct {
 	fset                *token.FileSet
@@ -313,8 +316,13 @@ func rewrite(p string) {
 
 		typesInfo := types.Info{
 			Types: make(map[ast.Expr]types.TypeAndValue),
+			Instances: make(map[*ast.Ident]types.Instance),
 			Defs:  make(map[*ast.Ident]types.Object),
 			Uses:  make(map[*ast.Ident]types.Object),
+			Implicits: make(map[ast.Node]types.Object),
+			Selections: make(map[*ast.SelectorExpr]*types.Selection),
+			Scopes: make(map[ast.Node]*types.Scope),
+			InitOrder: make([]*types.Initializer, 0),
 		}
 		conf := types.Config{Importer: importer.Default()}
 		_, err = conf.Check(pkgName, fset, []*ast.File{f}, &typesInfo)
