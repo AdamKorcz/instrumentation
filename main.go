@@ -17,13 +17,15 @@ import (
 	"os"
 	"path/filepath"
 	//"runtime"
+	"reflect"
+	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
 )
 
 var (
-	devMode      = false // false = overwrite files with new bug detectors
+	devMode      = true // false = overwrite files with new bug detectors
 	dummySnippet = "\"NotAvailable\""
 )
 
@@ -50,6 +52,7 @@ type Walker struct {
 	hasChanged          bool
 	src                 []byte // contents of .go file being analyzed
 	typesInfo           *types.Info
+	textRewriters       []*textRewriter
 }
 
 // We use the string NEW_LINE instead of "\n"
@@ -175,12 +178,92 @@ func (walker *Walker) typeName(expr ast.Expr) (string, error) {
 	return walker.typesInfo.TypeOf(expr).String(), nil
 }
 
+func (walker *Walker) typeBeingCreated(n ast.Node) string {
+	if _, ok := n.(*ast.ArrayType); ok {
+		return walker.typesInfo.TypeOf(n.(*ast.ArrayType)).String()
+	}
+	return ""
+}
+
+type textRewriter struct {
+	filePath     string
+	fileContents []byte
+	replaceFrom  string
+	replaceTo    string
+	startOffset  int
+	endOffset    int
+}
+
 func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 	if node == nil {
 		return walker
 	}
 	switch n := node.(type) {
 	case *ast.CallExpr:
+		if _, ok := n.Fun.(*ast.Ident); ok {
+			// functions we are interested in:
+			// 1: make([]byte)
+			if n.Fun.(*ast.Ident).Name == "make" {
+				// for now we just support the "len" arg:
+				if len(n.Args) == 2 {
+
+					// Check type being created
+					firstArg := n.Args[0]
+					if walker.typeBeingCreated(firstArg) != "[]byte" {
+						return walker
+					}
+					secondArg := n.Args[1]
+					fmt.Println(reflect.TypeOf(secondArg))
+					if _, ok := secondArg.(*ast.SelectorExpr); ok {
+						fmt.Println(reflect.TypeOf(secondArg.(*ast.SelectorExpr).X))
+						typeName, err := walker.typeName(secondArg.(*ast.SelectorExpr).X.(*ast.Ident))
+						if err != nil {
+							return walker
+						}
+						fmt.Println("typeName: ", typeName)
+						if typeName == "*archive/tar.Header" {
+							currentFilePath := walker.fset.File(secondArg.Pos()).Name()
+							currentFileContents, err := os.ReadFile(currentFilePath)
+							if err != nil {
+								panic(err)
+							}
+							baseOffset := walker.fset.File(secondArg.Pos()).Base()
+							start := int(n.Pos()) - baseOffset
+							end := int(n.End()) - baseOffset
+							replaceFrom := currentFileContents[start:end]
+							fmt.Println(string(currentFileContents[start:end]))
+							fmt.Println(walker.fset.File(secondArg.Pos()).Base())
+
+							secondParamStart := int(secondArg.Pos()) - baseOffset
+							secondParamEnd := int(secondArg.End()) - baseOffset
+							updated2ndParam := strings.Split(string(replaceFrom), ",")[1]
+							updated2ndParam = strings.Split(updated2ndParam, ")")[0]
+							updated2ndParam = strings.TrimSpace(updated2ndParam)
+							var b strings.Builder
+							b.WriteString(string(currentFileContents[start:secondParamStart]))
+							b.WriteString("lengthchecker.CheckLength(")
+							b.WriteString(string(currentFileContents[secondParamStart:secondParamEnd]))
+							b.WriteString("))")
+							//b.WriteString(string(currentFileContents[secondParamEnd:]))
+							fmt.Println(b.String())
+
+							tr := &textRewriter{
+								filePath:    currentFilePath,
+								startOffset: int(n.Pos()) - baseOffset,
+								endOffset:   int(n.End()) - baseOffset,
+								replaceFrom: string(replaceFrom),
+								replaceTo:   b.String(),
+							}
+							walker.textRewriters = append(walker.textRewriters, tr)
+						}
+						fmt.Println(n.Args[0], n.Args[1])
+
+					}
+
+				}
+			}
+			fmt.Println(":::::::::::::::::", reflect.TypeOf(n.Fun), n.Fun.(*ast.Ident).Name)
+		}
 		if aa, ok := n.Fun.(*ast.SelectorExpr); ok {
 			if _, ok := aa.X.(*ast.Ident); ok {
 				if aa.X.(*ast.Ident).Name == "io" {
@@ -393,12 +476,40 @@ func rewrite(p string) {
 					hasIoutilReadall: false,
 					hasChanged:       false,
 					src:              src,
-					typesInfo:        p.TypesInfo}
+					typesInfo:        p.TypesInfo,
+					textRewriters:    make([]*textRewriter, 0),
+				}
 				ioWalker := &IoUsageChecker{}
 				ast.Walk(ioWalker, f)
 
 				// Now walk and replace
 				ast.Walk(walker, walker.file)
+
+				// Sort textRewriters by highest first
+				fmt.Println("Before")
+				for _, tr := range walker.textRewriters {
+					fmt.Println(tr.startOffset)
+				}
+				sort.Slice(walker.textRewriters[:], func(i, j int) bool {
+					return walker.textRewriters[i].startOffset > walker.textRewriters[j].startOffset
+				})
+				fmt.Println("Second")
+				for _, tr := range walker.textRewriters {
+					fileBytes, err := os.ReadFile(tr.filePath)
+					if err != nil {
+						continue
+					}
+
+
+					lenDiff := len(tr.replaceTo)-len(tr.replaceFrom)
+					// Do the rewriting here
+					var b strings.Builder
+					b.WriteString(string(fileBytes[:tr.startOffset]))
+					b.WriteString(tr.replaceTo)
+					b.WriteString(string(fileBytes[tr.endOffset+lenDiff:]))
+
+					fmt.Println(b.String())
+				}
 
 				if walker.hasIoReadall {
 					// add imports
