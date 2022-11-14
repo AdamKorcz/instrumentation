@@ -17,7 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	//"runtime"
-	"reflect"
+	//"reflect"
 	"sort"
 	"strings"
 
@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	devMode      = true // false = overwrite files with new bug detectors
+	devMode      = false // false = overwrite files with new bug detectors
 	dummySnippet = "\"NotAvailable\""
 )
 
@@ -38,9 +38,96 @@ const LoadMode = packages.NeedName |
 	packages.NeedTypesSizes |
 	packages.NeedTypesInfo |
 	packages.NeedSyntax |
-	packages.NeedModule /* |
-	packages.NeedEmbedPatterns |
-	packages.NeedEmbedFiles*/
+	packages.NeedModule
+
+type MakeWalker struct {
+	fset                *token.FileSet
+	file                *ast.File
+	addNewIoPackage     bool
+	addNewIoutilPackage bool
+	hasIoReadall        bool
+	hasIoutilReadall    bool
+	hasChanged          bool
+	src                 []byte // contents of .go file being analyzed
+	typesInfo           *types.Info
+	textRewriters       []*textRewriter
+}
+
+func (walker *MakeWalker) Visit(node ast.Node) ast.Visitor {
+	if node == nil {
+		return walker
+	}
+	switch n := node.(type) {
+	case *ast.CallExpr:
+		if _, ok := n.Fun.(*ast.Ident); ok {
+			// functions we are interested in:
+			// 1: make([]byte)
+			if n.Fun.(*ast.Ident).Name == "make" {
+				// for now we just support the "len" arg:
+				if len(n.Args) == 2 {
+
+					// Check type being created
+					firstArg := n.Args[0]
+					if walker.typeBeingCreated(firstArg) != "[]byte" {
+						return walker
+					}
+					secondArg := n.Args[1]
+					//fmt.Println(reflect.TypeOf(secondArg))
+					if _, ok := secondArg.(*ast.SelectorExpr); ok {
+						//fmt.Println(reflect.TypeOf(secondArg.(*ast.SelectorExpr).X))
+						typeName, err := walker.typeName(secondArg.(*ast.SelectorExpr).X.(*ast.Ident))
+						if err != nil {
+							return walker
+						}
+						//fmt.Println("typeName: ", typeName)
+						if typeName == "io/fs.FileInfo" {
+							// WE SHOULD REWRITE
+
+							currentFilePath := walker.fset.File(secondArg.Pos()).Name()
+							currentFileContents, err := os.ReadFile(currentFilePath)
+							if err != nil {
+								panic(err)
+							}
+							baseOffset := walker.fset.File(secondArg.Pos()).Base()
+							start := int(n.Pos()) - baseOffset
+							end := int(n.End()) - baseOffset
+							replaceFrom := currentFileContents[start:end]
+							//fmt.Println(string(currentFileContents[start:end]))
+							//fmt.Println(walker.fset.File(secondArg.Pos()).Base())
+
+							secondParamStart := int(secondArg.Pos()) - baseOffset
+							secondParamEnd := int(secondArg.End()) - baseOffset
+							updated2ndParam := strings.Split(string(replaceFrom), ",")[1]
+							updated2ndParam = strings.Split(updated2ndParam, ")")[0]
+							updated2ndParam = strings.TrimSpace(updated2ndParam)
+							var b strings.Builder
+							b.WriteString(string(currentFileContents[start:secondParamStart]))
+							b.WriteString("lengthchecker.CheckLength(")
+							b.WriteString(string(currentFileContents[secondParamStart:secondParamEnd]))
+							b.WriteString("))")
+							//b.WriteString(string(currentFileContents[secondParamEnd:]))
+							//fmt.Println(b.String())
+
+							tr := &textRewriter{
+								filePath:    currentFilePath,
+								startOffset: int(n.Pos()) - baseOffset,
+								endOffset:   int(n.End()) - baseOffset,
+								replaceFrom: string(replaceFrom),
+								replaceTo:   b.String(),
+							}
+							walker.textRewriters = append(walker.textRewriters, tr)
+						}
+						//fmt.Println(n.Args[0], n.Args[1])
+
+					}
+
+				}
+			}
+			//fmt.Println(":::::::::::::::::", reflect.TypeOf(n.Fun), n.Fun.(*ast.Ident).Name)
+		}
+	}
+	return walker
+}
 
 type Walker struct {
 	fset                *token.FileSet
@@ -178,7 +265,23 @@ func (walker *Walker) typeName(expr ast.Expr) (string, error) {
 	return walker.typesInfo.TypeOf(expr).String(), nil
 }
 
+func (walker *MakeWalker) typeName(expr ast.Expr) (string, error) {
+	//fmt.Println("walker.typesInfo: ", walker.typesInfo)
+	//fmt.Println("walker.typesInfo.TypeOf(expr) = ", walker.typesInfo.TypeOf(expr))
+	if walker.typesInfo.TypeOf(expr) == nil {
+		return "", fmt.Errorf("type not found")
+	}
+	return walker.typesInfo.TypeOf(expr).String(), nil
+}
+
 func (walker *Walker) typeBeingCreated(n ast.Node) string {
+	if _, ok := n.(*ast.ArrayType); ok {
+		return walker.typesInfo.TypeOf(n.(*ast.ArrayType)).String()
+	}
+	return ""
+}
+
+func (walker *MakeWalker) typeBeingCreated(n ast.Node) string {
 	if _, ok := n.(*ast.ArrayType); ok {
 		return walker.typesInfo.TypeOf(n.(*ast.ArrayType)).String()
 	}
@@ -200,7 +303,7 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 	}
 	switch n := node.(type) {
 	case *ast.CallExpr:
-		if _, ok := n.Fun.(*ast.Ident); ok {
+		/*if _, ok := n.Fun.(*ast.Ident); ok {
 			// functions we are interested in:
 			// 1: make([]byte)
 			if n.Fun.(*ast.Ident).Name == "make" {
@@ -213,15 +316,17 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 						return walker
 					}
 					secondArg := n.Args[1]
-					fmt.Println(reflect.TypeOf(secondArg))
+					//fmt.Println(reflect.TypeOf(secondArg))
 					if _, ok := secondArg.(*ast.SelectorExpr); ok {
-						fmt.Println(reflect.TypeOf(secondArg.(*ast.SelectorExpr).X))
+						//fmt.Println(reflect.TypeOf(secondArg.(*ast.SelectorExpr).X))
 						typeName, err := walker.typeName(secondArg.(*ast.SelectorExpr).X.(*ast.Ident))
 						if err != nil {
 							return walker
 						}
-						fmt.Println("typeName: ", typeName)
-						if typeName == "*archive/tar.Header" {
+						//fmt.Println("typeName: ", typeName)
+						if typeName == "io/fs.FileInfo" {
+							// WE SHOULD REWRITE
+
 							currentFilePath := walker.fset.File(secondArg.Pos()).Name()
 							currentFileContents, err := os.ReadFile(currentFilePath)
 							if err != nil {
@@ -231,8 +336,8 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 							start := int(n.Pos()) - baseOffset
 							end := int(n.End()) - baseOffset
 							replaceFrom := currentFileContents[start:end]
-							fmt.Println(string(currentFileContents[start:end]))
-							fmt.Println(walker.fset.File(secondArg.Pos()).Base())
+							//fmt.Println(string(currentFileContents[start:end]))
+							//fmt.Println(walker.fset.File(secondArg.Pos()).Base())
 
 							secondParamStart := int(secondArg.Pos()) - baseOffset
 							secondParamEnd := int(secondArg.End()) - baseOffset
@@ -245,7 +350,7 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 							b.WriteString(string(currentFileContents[secondParamStart:secondParamEnd]))
 							b.WriteString("))")
 							//b.WriteString(string(currentFileContents[secondParamEnd:]))
-							fmt.Println(b.String())
+							//fmt.Println(b.String())
 
 							tr := &textRewriter{
 								filePath:    currentFilePath,
@@ -256,14 +361,14 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 							}
 							walker.textRewriters = append(walker.textRewriters, tr)
 						}
-						fmt.Println(n.Args[0], n.Args[1])
+						//fmt.Println(n.Args[0], n.Args[1])
 
 					}
 
 				}
 			}
-			fmt.Println(":::::::::::::::::", reflect.TypeOf(n.Fun), n.Fun.(*ast.Ident).Name)
-		}
+			//fmt.Println(":::::::::::::::::", reflect.TypeOf(n.Fun), n.Fun.(*ast.Ident).Name)
+		}*/
 		if aa, ok := n.Fun.(*ast.SelectorExpr); ok {
 			if _, ok := aa.X.(*ast.Ident); ok {
 				if aa.X.(*ast.Ident).Name == "io" {
@@ -399,7 +504,7 @@ func getAllGoFilesInDir(path string) []string {
 		if !isGoFile(file) {
 			continue
 		}
-		fmt.Println(file.Name())
+		//fmt.Println(file.Name())
 		fileName := filepath.Join(path, file.Name())
 		listOfFiles = append(listOfFiles, fileName)
 	}
@@ -459,13 +564,122 @@ func rewrite(p string) {
 		}
 
 		// Now we can instrument the file
+
+		// add first detector
 		fset3 := token.NewFileSet()
 		pkgs1234, err := packages.Load(&packages.Config{
 			Mode: LoadMode,
 			Fset: fset3,
 		}, "file="+path)
+
+
 		for _, p := range pkgs1234 {
 			for _, f := range p.Syntax {
+				src, err := os.ReadFile(p.GoFiles[0]) // there should only be one
+				if err != nil {
+					panic(err)
+				}
+				walker := &MakeWalker{fset: p.Fset,
+					file:             f,
+					hasIoReadall:     false,
+					hasIoutilReadall: false,
+					hasChanged:       false,
+					src:              src,
+					typesInfo:        p.TypesInfo,
+					textRewriters:    make([]*textRewriter, 0),
+				}
+				ioWalker := &IoUsageChecker{}
+				ast.Walk(ioWalker, f)
+
+				// Now walk and replace
+				ast.Walk(walker, walker.file)
+
+				// Sort textRewriters by highest first
+				sort.Slice(walker.textRewriters[:], func(i, j int) bool {
+					return walker.textRewriters[i].startOffset > walker.textRewriters[j].startOffset
+				})
+				//fmt.Println("Second")
+				fmt.Println(len(walker.textRewriters))
+				if len(walker.textRewriters) != 0 {
+					fileBytes, err := os.ReadFile(walker.textRewriters[0].filePath)
+					if err != nil {
+						panic(err)
+					}
+					/*newParsedFile, err := parser.ParseFile(walker.fset, tr.filePath, []byte(b.String()), 0)
+					if err != nil {
+						//panic(err)
+					}*/
+					for _, tr := range walker.textRewriters {
+
+						// Do the rewriting here
+						var b strings.Builder
+						/*fmt.Println("111111111111111111111")
+						fmt.Println(string(fileBytes[:tr.startOffset]))
+						fmt.Println("222222222222222222222")
+						fmt.Println("333333333333333333333")
+						fmt.Println(tr.replaceTo)
+						fmt.Println("444444444444444444444")*/
+						b.WriteString(string(fileBytes[:tr.startOffset]))
+						b.WriteString(tr.replaceTo)
+						b.WriteString(string(fileBytes[tr.endOffset:]))
+						fileBytes = []byte(b.String())
+
+						
+						//walker.file = newParsedFile
+						// replace the file in the fileset
+
+
+						/*os.Remove(tr.filePath)
+						f, err := os.Create(tr.filePath)
+						if err != nil {
+							panic(err)
+						}
+						defer f.Close()
+						f.WriteString(b.String())
+						fset := token.NewFileSet()
+						fu, err := parser.ParseFile(fset, tr.filePath, nil, 0)
+						if err != nil {
+							//panic(err)
+						}
+						//astutil.AddNamedImport(fset, fu, "lengthchecker", "github.com/AdamKorcz/bugdetectors/other")
+						buf := new(bytes.Buffer)
+						err = printer.Fprint(buf, fset, fu)
+						if err != nil {
+							panic(err)
+						}*/
+					}
+					fset := token.NewFileSet()
+					newParsedFile, err := parser.ParseFile(fset, "", fileBytes, 0)
+					if err != nil {
+						panic(err)
+					}
+					astutil.AddNamedImport(fset, newParsedFile, "lengthchecker", "github.com/AdamKorcz/bugdetectors/other")
+
+					buf := new(bytes.Buffer)
+					err = printer.Fprint(buf, fset, newParsedFile)
+					if err != nil {
+						panic(err)
+					}
+					os.Remove(walker.textRewriters[0].filePath)
+					newFile, err := os.Create(walker.textRewriters[0].filePath)
+					if err != nil {
+						panic(err)
+					}
+					defer newFile.Close()
+					newFile.Write(buf.Bytes())
+				}
+			}
+		}
+		fset3 = token.NewFileSet()
+		pkgs1234, err = packages.Load(&packages.Config{
+			Mode: LoadMode,
+			Fset: fset3,
+		}, "file="+path)
+
+
+		for _, p := range pkgs1234 {
+			for _, f := range p.Syntax {
+
 				src, err := os.ReadFile(p.GoFiles[0]) // there should only be one
 				if err != nil {
 					panic(err)
@@ -484,32 +698,9 @@ func rewrite(p string) {
 
 				// Now walk and replace
 				ast.Walk(walker, walker.file)
-
-				// Sort textRewriters by highest first
-				fmt.Println("Before")
-				for _, tr := range walker.textRewriters {
-					fmt.Println(tr.startOffset)
-				}
-				sort.Slice(walker.textRewriters[:], func(i, j int) bool {
-					return walker.textRewriters[i].startOffset > walker.textRewriters[j].startOffset
-				})
-				fmt.Println("Second")
-				for _, tr := range walker.textRewriters {
-					fileBytes, err := os.ReadFile(tr.filePath)
-					if err != nil {
-						continue
-					}
-
-
-					lenDiff := len(tr.replaceTo)-len(tr.replaceFrom)
-					// Do the rewriting here
-					var b strings.Builder
-					b.WriteString(string(fileBytes[:tr.startOffset]))
-					b.WriteString(tr.replaceTo)
-					b.WriteString(string(fileBytes[tr.endOffset+lenDiff:]))
-
-					fmt.Println(b.String())
-				}
+				// Should also add the import here
+				//astutil.AddNamedImport(walker.fset, walker.file, "lengthchecker", "github.com/AdamKorcz/bugdetectors/other")
+			
 
 				if walker.hasIoReadall {
 					// add imports
@@ -524,10 +715,6 @@ func rewrite(p string) {
 				}
 
 				walker.deleteImports()
-
-				if !walker.hasChanged {
-					return nil
-				}
 
 				var buf bytes.Buffer
 				printer.Fprint(&buf, walker.fset, walker.file)
