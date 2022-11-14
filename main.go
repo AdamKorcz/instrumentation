@@ -282,6 +282,9 @@ func (walker *Walker) typeBeingCreated(n ast.Node) string {
 }
 
 func (walker *MakeWalker) typeBeingCreated(n ast.Node) string {
+	if n == nil {
+		return ""
+	}
 	if walker.typesInfo == nil {
 		return ""
 	}
