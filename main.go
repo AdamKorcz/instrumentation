@@ -285,6 +285,9 @@ func (walker *MakeWalker) typeBeingCreated(n ast.Node) string {
 	if walker.typesInfo == nil {
 		return ""
 	}
+	if walker.typesInfo.TypeOf(n.(*ast.ArrayType)) == nil {
+		return ""
+	}
 	if _, ok := n.(*ast.ArrayType); ok {
 		return walker.typesInfo.TypeOf(n.(*ast.ArrayType)).String()
 	}
