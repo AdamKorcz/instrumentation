@@ -599,7 +599,7 @@ func rewrite(p string) {
 					return walker.textRewriters[i].startOffset > walker.textRewriters[j].startOffset
 				})
 				//fmt.Println("Second")
-				fmt.Println(len(walker.textRewriters))
+				//fmt.Println(len(walker.textRewriters))
 				if len(walker.textRewriters) != 0 {
 					fileBytes, err := os.ReadFile(walker.textRewriters[0].filePath)
 					if err != nil {
