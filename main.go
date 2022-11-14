@@ -288,11 +288,11 @@ func (walker *MakeWalker) typeBeingCreated(n ast.Node) string {
 	if walker.typesInfo == nil {
 		return ""
 	}
-	fmt.Println("1: ", walker.typesInfo)
-	if walker.typesInfo.TypeOf(n.(*ast.ArrayType)) == nil {
-		return ""
-	}
 	if _, ok := n.(*ast.ArrayType); ok {
+		fmt.Println("1: ", walker.typesInfo)
+		if walker.typesInfo.TypeOf(n.(*ast.ArrayType)) == nil {
+			return ""
+		}
 		return walker.typesInfo.TypeOf(n.(*ast.ArrayType)).String()
 	}
 	return ""
