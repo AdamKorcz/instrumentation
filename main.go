@@ -75,6 +75,9 @@ func (walker *MakeWalker) Visit(node ast.Node) ast.Visitor {
 					//fmt.Println(reflect.TypeOf(secondArg))
 					if _, ok := secondArg.(*ast.SelectorExpr); ok {
 						//fmt.Println(reflect.TypeOf(secondArg.(*ast.SelectorExpr).X))
+						if _, ok := secondArg.(*ast.SelectorExpr).X.(*ast.Ident); !ok {
+							return walker
+						}
 						typeName, err := walker.typeName(secondArg.(*ast.SelectorExpr).X.(*ast.Ident))
 						if err != nil {
 							return walker
