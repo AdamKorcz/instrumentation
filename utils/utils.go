@@ -3,8 +3,20 @@ package utils
 import (
 	"go/token"
 	"go/parser"
+	"golang.org/x/tools/go/packages"
 )
 
+
+// LoadMode controls the amount of details to return when loading the packages
+const LoadMode = packages.NeedName |
+	packages.NeedFiles |
+	packages.NeedCompiledGoFiles |
+	packages.NeedImports |
+	packages.NeedTypes |
+	packages.NeedTypesSizes |
+	packages.NeedTypesInfo |
+	packages.NeedSyntax |
+	packages.NeedModule
 
 type TextRewriter struct {
 	FilePath     string
@@ -46,4 +58,16 @@ func CheckImports(path string) bool {
 		return false
 	}
 	return true
+}
+
+func LoadPackages(path string) []*packages.Package {
+	fset := token.NewFileSet()
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: LoadMode,
+		Fset: fset,
+	}, "file="+path)
+	if err != nil {
+		panic(err)
+	}
+	return pkgs
 }

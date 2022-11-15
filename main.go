@@ -5,24 +5,17 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	//"go/importer"
-	//"go/parser"
 	"go/printer"
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/ast/astutil"
-	//"io"
 	"io/ioutil"
-	//"io/fs"
 	"os"
 	"path/filepath"
-	//"runtime"
-	//"reflect"
 	"strings"
 
 	instrmake "github.com/AdamKorcz/instrumentation/sanitizers/make"
 	"github.com/AdamKorcz/instrumentation/utils"
-	"golang.org/x/tools/go/packages"
 )
 
 var (
@@ -30,16 +23,6 @@ var (
 	dummySnippet = "\"NotAvailable\""
 )
 
-// LoadMode controls the amount of details to return when loading the packages
-const LoadMode = packages.NeedName |
-	packages.NeedFiles |
-	packages.NeedCompiledGoFiles |
-	packages.NeedImports |
-	packages.NeedTypes |
-	packages.NeedTypesSizes |
-	packages.NeedTypesInfo |
-	packages.NeedSyntax |
-	packages.NeedModule
 
 type Walker struct {
 	fset                *token.FileSet
@@ -48,7 +31,6 @@ type Walker struct {
 	addNewIoutilPackage bool
 	hasIoReadall        bool
 	hasIoutilReadall    bool
-	hasChanged          bool
 	src                 []byte // contents of .go file being analyzed
 	typesInfo           *types.Info
 	textRewriters       []*utils.TextRewriter
@@ -74,60 +56,28 @@ func getStringVersion(n ast.Node, src []byte, fset *token.FileSet) string {
 	return returnString.String()
 }
 
-func (walker *Walker) rewriteIoReadAll(n ast.Node, aa *ast.SelectorExpr) {
-	if aa.Sel.Name == "ReadAll" {
-		// Now we have found an io.ReadAll()
+func (walker *Walker) rewriteReadAll(n ast.Node, aa *ast.SelectorExpr) {
+	apiName := aa.Sel.Name
 
-		// First we obtain the line number
-		// and code.
-		var codeSnippet string
-		src := walker.src
-		if codeSnippet != "Could not generate code" {
-			codeSnippet = getStringVersion(aa, src, walker.fset)
-		}
+	if apiName != "ReadAll" {
+		return
+	}
+
+	var codeSnippet string
+	src := walker.src
+	if codeSnippet != "Could not generate code" {
+		codeSnippet = getStringVersion(aa, src, walker.fset)
+	}
+
+	selectorName := aa.X.(*ast.Ident).Name
+	if selectorName == "io" {
 		walker.hasIoReadall = true
 		aa.X.(*ast.Ident).Name = "io2"
-
-		// Add the code line to the function call
-		n.(*ast.CallExpr).Args = append(n.(*ast.CallExpr).Args, ast.NewIdent(codeSnippet))
-		walker.hasChanged = true
-
-		return
-		// This prints out the end result.
-		// It is useful for testing.
-		err := printer.Fprint(os.Stdout, walker.fset, walker.file)
-		if err != nil {
-			fmt.Println(err)
-		}
-	}
-}
-
-func (walker *Walker) rewriteIoutilReadAll(n ast.Node, aa *ast.SelectorExpr) {
-	if aa.Sel.Name == "ReadAll" {
-		// Now we have found an ioutil.ReadAll()
-
-		// First we obtain the line number
-		// and code.
-		var codeSnippet string
-		src := walker.src
-		if codeSnippet != "Could not generate code" {
-			codeSnippet = getStringVersion(n, src, walker.fset)
-		}
+	} else if selectorName == "ioutil" {
 		walker.hasIoutilReadall = true
 		aa.X.(*ast.Ident).Name = "ioutil2"
-
-		// Add the code line to the function call
-		n.(*ast.CallExpr).Args = append(n.(*ast.CallExpr).Args, ast.NewIdent(codeSnippet))
-		walker.hasChanged = true
-
-		return
-		// This prints out the end result.
-		// It is useful for testing.
-		err := printer.Fprint(os.Stdout, walker.fset, walker.file)
-		if err != nil {
-			fmt.Println(err)
-		}
 	}
+	n.(*ast.CallExpr).Args = append(n.(*ast.CallExpr).Args, ast.NewIdent(codeSnippet))
 }
 
 func (walker *Walker) rewriteBufferBytes(n ast.Node, aa *ast.SelectorExpr) {
@@ -142,7 +92,7 @@ func (walker *Walker) rewriteBufferBytes(n ast.Node, aa *ast.SelectorExpr) {
 	}
 	astutil.AddNamedImport(walker.fset, walker.file, "customBytes", "github.com/AdamKorcz/bugdetectors/bytes")
 
-	// Add the code line to the function call
+	// TODO:Add the code line to the function call
 
 	// Copy the existing function call
 	x := aa.X.(*ast.Ident).Name
@@ -169,8 +119,6 @@ func (walker *Walker) rewriteBufferBytes(n ast.Node, aa *ast.SelectorExpr) {
 }
 
 func (walker *Walker) typeName(expr ast.Expr) (string, error) {
-	//fmt.Println("walker.typesInfo: ", walker.typesInfo)
-	//fmt.Println("walker.typesInfo.TypeOf(expr) = ", walker.typesInfo.TypeOf(expr))
 	if walker.typesInfo.TypeOf(expr) == nil {
 		return "", fmt.Errorf("type not found")
 	}
@@ -184,6 +132,14 @@ func (walker *Walker) typeBeingCreated(n ast.Node) string {
 	return ""
 }
 
+func selectorIsIo(n ast.Node) bool {
+	return n.(*ast.SelectorExpr).X.(*ast.Ident).Name == "io"
+}
+
+func selectorIsIoutil(n ast.Node) bool {
+	return n.(*ast.SelectorExpr).X.(*ast.Ident).Name == "ioutil"
+}
+
 func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 	if node == nil {
 		return walker
@@ -192,11 +148,8 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 	case *ast.CallExpr:
 		if aa, ok := n.Fun.(*ast.SelectorExpr); ok {
 			if _, ok := aa.X.(*ast.Ident); ok {
-				if aa.X.(*ast.Ident).Name == "io" {
-					walker.rewriteIoReadAll(n, aa)
-				}
-				if aa.X.(*ast.Ident).Name == "ioutil" {
-					walker.rewriteIoutilReadAll(n, aa)
+				if selectorIsIo(aa) || selectorIsIoutil(aa) {
+					walker.rewriteReadAll(n, aa)
 				}
 				if aa.Sel.Name == "Bytes" {
 					if typeName, err := walker.typeName(aa.X); err == nil {
@@ -286,7 +239,7 @@ func (walker *Walker) addNewIoutilImport() {
 	return
 }
 
-func (walker *Walker) deleteImports() {
+func (walker *Walker) deleteUnusedImports() {
 	if !astutil.UsesImport(walker.file, "io") {
 		astutil.DeleteImport(walker.fset, walker.file, "io")
 
@@ -333,14 +286,7 @@ func getAllGoFilesInDir(path string) []string {
 }
 
 func addMakeSanitizer(path string) {
-	fset := token.NewFileSet()
-	pkgs, err := packages.Load(&packages.Config{
-		Mode: LoadMode,
-		Fset: fset,
-	}, "file="+path)
-	if err != nil {
-		panic(err)
-	}
+	pkgs := utils.LoadPackages(path)
 
 	for _, p := range pkgs {
 		for _, f := range p.Syntax {
@@ -358,85 +304,100 @@ func addMakeSanitizer(path string) {
 	}
 }
 
-func rewrite(p string) {
+func (walker *Walker) AddSanitizers() {
+
+	// collect io/ioutil usage
+	ioWalker := &IoUsageChecker{}
+	ast.Walk(ioWalker, walker.file)
+
+	// Now walk and replace
+	ast.Walk(walker, walker.file)
+
+	// add imports
+	if walker.hasIoReadall {
+		walker.addNewIoPackage = ioWalker.UsesOtherIo
+		walker.addNewIoImport()
+	}
+
+	if walker.hasIoutilReadall {
+		walker.addNewIoutilPackage = ioWalker.UsesOtherIoutil
+		walker.addNewIoutilImport()
+	}
+
+	walker.deleteUnusedImports()	
+}
+
+func (walker *Walker) UpdateSrcFiles(path string) {
+	var buf bytes.Buffer
+	printer.Fprint(&buf, walker.fset, walker.file)
+	if devMode {
+		return
+	}
+	os.Remove(path)
+	newFile, err := os.Create(path)
+	if err != nil {
+		panic(err)
+	}
+	defer newFile.Close()
+	newFile.Write(buf.Bytes())
+}
+
+func addRemainingSanitizers(path string) {
+	pkgs := utils.LoadPackages(path)
+	for _, p := range pkgs {
+		for _, f := range p.Syntax {
+
+			src, err := os.ReadFile(p.GoFiles[0]) // there should only be one
+			if err != nil {
+				panic(err)
+			}
+
+			walker := &Walker{fset: p.Fset,
+				file:             f,
+				hasIoReadall:     false,
+				hasIoutilReadall: false,
+				src:              src,
+				typesInfo:        p.TypesInfo,
+				textRewriters:    make([]*utils.TextRewriter, 0),
+			}
+
+			walker.AddSanitizers()
+			walker.UpdateSrcFiles(path)
+		}
+	}
+}
+
+func validateFilePath(path string, info os.FileInfo) error {
+	if !isGoFile(info) {
+		return fmt.Errorf("Skip file")
+	}
+
+	if isTroubledDependency(path) {
+		return fmt.Errorf("Skip file")
+	}
+
+	// Do low-cost check on imports
+	if !utils.CheckImports(path) {
+		return fmt.Errorf("Skip file")
+	}
+	return nil
+}
+
+func sanitize(p string) {
 	filepath.Walk(p, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Println(err)
 			return err
 		}
-		if !isGoFile(info) {
+		err = validateFilePath(path, info)
+		if err != nil {
 			return nil
 		}
-
-		if isTroubledDependency(path) {
-			return nil
-		}
-
-		// Do low-cost check on imports
-		if !utils.CheckImports(path) {
-			return nil
-		}
-
+		
+		// Add sanitizers
 		addMakeSanitizer(path)
-
-		fset := token.NewFileSet()
-		pkgs, err := packages.Load(&packages.Config{
-			Mode: LoadMode,
-			Fset: fset,
-		}, "file="+path)
-
-		for _, p := range pkgs {
-			for _, f := range p.Syntax {
-
-				src, err := os.ReadFile(p.GoFiles[0]) // there should only be one
-				if err != nil {
-					panic(err)
-				}
-				walker := &Walker{fset: p.Fset,
-					file:             f,
-					hasIoReadall:     false,
-					hasIoutilReadall: false,
-					hasChanged:       false,
-					src:              src,
-					typesInfo:        p.TypesInfo,
-					textRewriters:    make([]*utils.TextRewriter, 0),
-				}
-				ioWalker := &IoUsageChecker{}
-				ast.Walk(ioWalker, f)
-
-				// Now walk and replace
-				ast.Walk(walker, walker.file)
-				// Should also add the import here
-
-				if walker.hasIoReadall {
-					// add imports
-					walker.addNewIoPackage = ioWalker.UsesOtherIo
-					walker.addNewIoImport()
-				}
-
-				if walker.hasIoutilReadall {
-					// add imports
-					walker.addNewIoutilPackage = ioWalker.UsesOtherIoutil
-					walker.addNewIoutilImport()
-				}
-
-				walker.deleteImports()
-
-				var buf bytes.Buffer
-				printer.Fprint(&buf, walker.fset, walker.file)
-				if devMode {
-					return nil
-				}
-				os.Remove(path)
-				newFile, err := os.Create(path)
-				if err != nil {
-					panic(err)
-				}
-				defer newFile.Close()
-				newFile.Write(buf.Bytes())
-				return nil
-			}
-		}
+		addRemainingSanitizers(path)
+		
 		return nil
 	})
 }
@@ -446,6 +407,6 @@ func main() {
 		panic("A path should be added")
 	}
 	dir := os.Args[1]
-	rewrite(dir)
+	sanitize(dir)
 	return
 }
