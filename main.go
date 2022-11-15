@@ -23,7 +23,6 @@ var (
 	dummySnippet = "\"NotAvailable\""
 )
 
-
 type Walker struct {
 	fset                *token.FileSet
 	file                *ast.File
@@ -278,7 +277,7 @@ func getAllGoFilesInDir(path string) []string {
 		if !isGoFile(file) {
 			continue
 		}
-		
+
 		fileName := filepath.Join(path, file.Name())
 		listOfFiles = append(listOfFiles, fileName)
 	}
@@ -298,7 +297,6 @@ func addMakeSanitizer(path string) {
 
 			// Now walk and replace
 			walker.CollectData()
-			fmt.Println("Sanitizing...")
 			walker.SanitizeFile()
 		}
 	}
@@ -324,7 +322,7 @@ func (walker *Walker) AddSanitizers() {
 		walker.addNewIoutilImport()
 	}
 
-	walker.deleteUnusedImports()	
+	walker.deleteUnusedImports()
 }
 
 func (walker *Walker) UpdateSrcFiles(path string) {
@@ -393,11 +391,11 @@ func sanitize(p string) {
 		if err != nil {
 			return nil
 		}
-		
+
 		// Add sanitizers
 		addMakeSanitizer(path)
 		addRemainingSanitizers(path)
-		
+
 		return nil
 	})
 }
