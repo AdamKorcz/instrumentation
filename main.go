@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"go/ast"
 	//"go/importer"
-	"go/parser"
+	//"go/parser"
 	"go/printer"
 	"go/token"
 	"go/types"
@@ -325,50 +325,16 @@ func getAllGoFilesInDir(path string) []string {
 		if !isGoFile(file) {
 			continue
 		}
-		//fmt.Println(file.Name())
+		
 		fileName := filepath.Join(path, file.Name())
 		listOfFiles = append(listOfFiles, fileName)
 	}
 	return listOfFiles
 }
 
-func isInterestingImport(impName string) bool {
-	interestingImports := []string{
-		"\"io\"", "io", "\"io/ioutil\"", "io/ioutil", "\"bytes\"", "bytes",
-	}
-	for _, imp := range interestingImports {
-		if impName == imp {
-			return true
-		}
-	}
-	return false
-}
-
-func checkImports(path string) bool {
-	fsetCheck := token.NewFileSet()
-	fCheck, err := parser.ParseFile(fsetCheck, path, nil, parser.ImportsOnly)
-	if err != nil {
-		return false
-	}
-
-	var hasInterestingImport bool
-	hasInterestingImport = false
-	for _, imp := range fCheck.Imports {
-		if isInterestingImport(imp.Path.Value) {
-			hasInterestingImport = true
-			break
-		}
-	}
-	if !hasInterestingImport {
-		return false
-	}
-	return true
-}
-
 func addMakeSanitizer(path string) {
-	// add first detector
 	fset := token.NewFileSet()
-	pkgs1234, err := packages.Load(&packages.Config{
+	pkgs, err := packages.Load(&packages.Config{
 		Mode: LoadMode,
 		Fset: fset,
 	}, "file="+path)
@@ -376,7 +342,7 @@ func addMakeSanitizer(path string) {
 		panic(err)
 	}
 
-	for _, p := range pkgs1234 {
+	for _, p := range pkgs {
 		for _, f := range p.Syntax {
 			src, err := os.ReadFile(p.GoFiles[0]) // there should only be one
 			if err != nil {
@@ -390,7 +356,6 @@ func addMakeSanitizer(path string) {
 			walker.SanitizeFile()
 		}
 	}
-
 }
 
 func rewrite(p string) {
@@ -408,7 +373,7 @@ func rewrite(p string) {
 		}
 
 		// Do low-cost check on imports
-		if !checkImports(path) {
+		if !utils.CheckImports(path) {
 			return nil
 		}
 
@@ -442,7 +407,6 @@ func rewrite(p string) {
 				// Now walk and replace
 				ast.Walk(walker, walker.file)
 				// Should also add the import here
-				//astutil.AddNamedImport(walker.fset, walker.file, "lengthchecker", "github.com/AdamKorcz/bugdetectors/other")
 
 				if walker.hasIoReadall {
 					// add imports
