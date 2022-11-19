@@ -39,21 +39,38 @@ type Walker struct {
 // This is to not add extra lines in the source file.
 // When the message gets printed, we should do a search
 // and replace to correctly format the message.
+// Todo: Get all locations of interesting calls before
+// instrumenting and save these. Once we instrument,
+// we get the calls position and use that.
 func getStringVersion(n ast.Node, src []byte, fset *token.FileSet) string {
-	return dummySnippet
+	//return dummySnippet
 	start := n.Pos()
 	end := n.End()
-	startf := fset.Position(n.Pos())
+
+	//startf := fset.Position(n.Pos())
+	fileAtPos := fset.File(n.Pos())
+	//offSet := fileAtPos.Offset(n.Pos())
+
+	snippetLength := int(end) - int(start)
+
+	snippetStart := fileAtPos.Offset(n.Pos())	
+	snippetEnd := snippetStart+snippetLength
+
+	//fmt.Println(string(src[snippetStart:snippetEnd]))
+	startf2 := fset.Position(fileAtPos.Pos(snippetStart))
+
+	//fmt.Println(fileAtPos.Name(), offSet)
 
 	var returnString strings.Builder
 
 	// wrap the codeSnippet in quotes:
 	returnString.WriteString("\"")
-	returnString.WriteString(fmt.Sprintf("%sNEW_LINE", startf))
-	returnString.WriteString(string(src[start-1 : end-1]))
+	returnString.WriteString(fmt.Sprintf("%s (May be slightly inaccurate) NEW_LINE", startf2))
+	returnString.WriteString(string(src[snippetStart:snippetEnd]))
 	returnString.WriteString("\"")
 	return returnString.String()
 }
+
 
 func (walker *Walker) rewriteReadAll(n ast.Node, aa *ast.SelectorExpr) {
 	apiName := aa.Sel.Name
