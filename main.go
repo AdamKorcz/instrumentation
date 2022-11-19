@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	instrmake "github.com/AdamKorcz/instrumentation/sanitizers/make"
+	instrIo "github.com/AdamKorcz/instrumentation/sanitizers/io"
 	"github.com/AdamKorcz/instrumentation/utils"
 )
 
@@ -93,6 +94,8 @@ func (walker *Walker) rewriteReadAll(n ast.Node, aa *ast.SelectorExpr) {
 		walker.hasIoutilReadall = true
 		aa.X.(*ast.Ident).Name = "ioutil2"
 	}
+
+	// Add call param
 	n.(*ast.CallExpr).Args = append(n.(*ast.CallExpr).Args, ast.NewIdent(codeSnippet))
 }
 
@@ -106,7 +109,7 @@ func (walker *Walker) rewriteBufferBytes(n ast.Node, aa *ast.SelectorExpr) {
 	if codeSnippet != "Could not generate code" {
 		codeSnippet = getStringVersion(n, src, walker.fset)
 	}
-	astutil.AddNamedImport(walker.fset, walker.file, "customBytes", "github.com/AdamKorcz/bugdetectors/bytes")
+	addCustomBytesImport(walker.fset, walker.file)
 
 	// TODO:Add the code line to the function call
 
@@ -132,6 +135,12 @@ func (walker *Walker) rewriteBufferBytes(n ast.Node, aa *ast.SelectorExpr) {
 	if err != nil {
 		fmt.Println(err)
 	}
+}
+
+func addCustomBytesImport(fset *token.FileSet, file *ast.File) {
+	name := "customBytes"
+	importPath := "github.com/AdamKorcz/bugdetectors/bytes"
+	astutil.AddNamedImport(fset, file, name, importPath)
 }
 
 func (walker *Walker) typeName(expr ast.Expr) (string, error) {
@@ -227,20 +236,6 @@ func (walker *Walker) usesIoPackage(file *ast.File) bool {
 	return astutil.UsesImport(walker.file, "io")
 }
 
-func (walker *Walker) addNewIoImport() {
-	// Add new package:
-	if walker.addNewIoPackage {
-		astutil.AddNamedImport(walker.fset, walker.file, "io2", "github.com/AdamKorcz/bugdetectors/io")
-
-		return
-	}
-
-	// Change "io" to the new package
-	astutil.AddNamedImport(walker.fset, walker.file, "io2", "github.com/AdamKorcz/bugdetectors/io")
-
-	return
-}
-
 func (walker *Walker) addNewIoutilImport() {
 	// Add new package:
 	if walker.addNewIoPackage {
@@ -330,8 +325,7 @@ func (walker *Walker) AddSanitizers() {
 
 	// add imports
 	if walker.hasIoReadall {
-		walker.addNewIoPackage = ioWalker.UsesOtherIo
-		walker.addNewIoImport()
+		instrIo.AddNewIoImport(walker.fset, walker.file, ioWalker.UsesOtherIo)
 	}
 
 	if walker.hasIoutilReadall {
