@@ -64,6 +64,8 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 	case *ast.IfStmt:
 		if be, ok := n.Cond.(*ast.BinaryExpr); ok {
 			if be.Op.String() == "==" {
+				/*
+				WIP:
 				fmt.Println("---------------", reflect.TypeOf(be.X))
 				if _, ok := be.X.(*ast.SelectorExpr);ok {
 					tt, err := walker.typeName(be.X)
@@ -71,7 +73,7 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 						panic(err)
 					}
 					fmt.Println(tt)
-				}
+				}*/
 				if stringLit, ok := be.Y.(*ast.BasicLit); ok {
 					if stringLit.Kind == token.STRING {
 						
