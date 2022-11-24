@@ -411,11 +411,31 @@ func sanitize(p string) {
 	})
 }
 
+func sanitize(p string) {
+	filepath.Walk(p, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+		err = validateFilePath(path, info)
+		if err != nil {
+			return nil
+		}
+
+		codeoptimizer.OptimizeConditionals(path)
+
+		return nil
+	})
+}
+
 func main() {
 	if len(os.Args) != 2 {
 		panic("A path should be added")
 	}
 	dir := os.Args[1]
+
+	optimize(dir)
+
 	sanitize(dir)
 	return
 }
