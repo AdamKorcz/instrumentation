@@ -54,7 +54,8 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 			if be.Op.String() == "==" {
 				if stringLit, ok := be.Y.(*ast.BasicLit); ok {
 					if stringLit.Kind == token.STRING {
-						if stringLit.Value == "" {
+						fmt.Println(stringLit.Value)
+						if stringLit.Value == "\"\"" {
 							return walker
 						}
 
@@ -121,4 +122,5 @@ func OptimizeConditionals(path string) {
 		    rewrittenFile.Write(walker.src)
 		}
 	}
+	panic("Done")
 }
