@@ -82,7 +82,7 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 						var condWriter strings.Builder
 
 						for i:=0; i<valueLen; i++ {
-							condWriter.WriteString(fmt.Sprintf("string(%s[%d]) == \"%c\"", xString, i, yValue[i]))
+							condWriter.WriteString(fmt.Sprintf("(len(%s) >= %d && string(%s[%d]) == \"%c\")", xString, i, xString, i, yValue[i]))
 
 							if i != valueLen-1 {
 								condWriter.WriteString(" && ")
