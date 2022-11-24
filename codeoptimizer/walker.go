@@ -61,10 +61,10 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 						start := int(be.Pos()) - baseOffset + walker.additionalOffset
 						end := int(stringLit.End()) - baseOffset + walker.additionalOffset
 
-						fmt.Println(start, end)
+						//fmt.Println(start, end)
 						//currentFilePath := walker.fset.File(n.Pos()).Name()
 						currentFileContents := walker.src
-						fmt.Println(string(currentFileContents))
+						//fmt.Println(string(currentFileContents))
 						conditionalStmtString := string(currentFileContents[start:end])
 						xString := strings.Split(conditionalStmtString, " ==")[0]
 						fileContentsUntilConditional := string(currentFileContents[:start])
@@ -104,7 +104,6 @@ func OptimizeConditionals(path string) {
 	for _, p := range pkgs {
 		for _, f := range p.Syntax {
 			src, err := os.ReadFile(p.GoFiles[0]) // there should only be one
-			fmt.Println(src)
 			if err != nil {
 				panic(err)
 			}
@@ -118,5 +117,4 @@ func OptimizeConditionals(path string) {
 		    rewrittenFile.Write(walker.src)
 		}
 	}
-	panic("Done")
 }
