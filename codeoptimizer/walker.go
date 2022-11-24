@@ -54,8 +54,12 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 			if be.Op.String() == "==" {
 				if stringLit, ok := be.Y.(*ast.BasicLit); ok {
 					if stringLit.Kind == token.STRING {
+						if stringLit.Value == "" {
+							return walker
+						}
 
 						yValue := stringLit.Value[1:len(stringLit.Value)-1]
+
 
 						baseOffset := walker.fset.File(n.Pos()).Base()
 						start := int(be.Pos()) - baseOffset + walker.additionalOffset
