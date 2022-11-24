@@ -17,6 +17,7 @@ import (
 	instrmake "github.com/AdamKorcz/instrumentation/sanitizers/make"
 	instrIo "github.com/AdamKorcz/instrumentation/sanitizers/io"
 	"github.com/AdamKorcz/instrumentation/utils"
+	"github.com/AdamKorcz/instrumentation/codeoptimizer"
 )
 
 var (
@@ -411,7 +412,7 @@ func sanitize(p string) {
 	})
 }
 
-func sanitize(p string) {
+func optimize(p string) {
 	filepath.Walk(p, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Println(err)
