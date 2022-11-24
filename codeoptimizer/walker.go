@@ -122,5 +122,4 @@ func OptimizeConditionals(path string) {
 		    rewrittenFile.Write(walker.src)
 		}
 	}
-	panic("Done")
 }
