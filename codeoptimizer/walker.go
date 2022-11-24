@@ -6,6 +6,7 @@ import (
 	"go/types"
 	"go/ast"
 	"os"
+	"reflect"
 	"strings"
 	"github.com/AdamKorcz/instrumentation/utils"
 )
@@ -44,6 +45,17 @@ func NewWalker(fset *token.FileSet, f *ast.File, ti *types.Info, src []byte) *Wa
 				}
 }
 
+func isEmptyString(stringLitValue string) bool {
+	return stringLitValue == "\"\""
+}
+
+func (walker *Walker) typeName(expr ast.Expr) (string, error) {
+	if walker.typesInfo.TypeOf(expr) == nil {
+		return "", fmt.Errorf("type not found")
+	}
+	return walker.typesInfo.TypeOf(expr).String(), nil
+}
+
 func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 	if node == nil {
 		return walker
@@ -52,10 +64,18 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 	case *ast.IfStmt:
 		if be, ok := n.Cond.(*ast.BinaryExpr); ok {
 			if be.Op.String() == "==" {
+				fmt.Println("---------------", reflect.TypeOf(be.X))
+				if _, ok := be.X.(*ast.SelectorExpr);ok {
+					tt, err := walker.typeName(be.X)
+					if err != nil {
+						panic(err)
+					}
+					fmt.Println(tt)
+				}
 				if stringLit, ok := be.Y.(*ast.BasicLit); ok {
 					if stringLit.Kind == token.STRING {
-						fmt.Println(stringLit.Value)
-						if stringLit.Value == "\"\"" {
+						
+						if isEmptyString(stringLit.Value) {
 							return walker
 						}
 
@@ -82,7 +102,7 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 						var condWriter strings.Builder
 
 						for i:=0; i<valueLen; i++ {
-							condWriter.WriteString(fmt.Sprintf("(len(%s) >= %d && string(%s[%d]) == \"%c\")", xString, i, xString, i, yValue[i]))
+							condWriter.WriteString(fmt.Sprintf("(len(%s) >= %d && string(%s[%d]) == \"%c\")", xString, i+1, xString, i, yValue[i]))
 
 							if i != valueLen-1 {
 								condWriter.WriteString(" && ")
