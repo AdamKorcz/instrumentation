@@ -6,7 +6,7 @@ import (
 	"go/types"
 	"go/ast"
 	"os"
-	"reflect"
+	//"reflect"
 	"strings"
 	"github.com/AdamKorcz/instrumentation/utils"
 )
