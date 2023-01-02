@@ -1,21 +1,21 @@
 package codeoptimizer
 
 import (
-    "os"
-    "fmt"
-    "testing"
-    "go/ast"
-    "github.com/AdamKorcz/instrumentation/utils"
+	"fmt"
+	"github.com/AdamKorcz/instrumentation/utils"
+	"go/ast"
+	"os"
+	"testing"
 
-    "github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestSimpleConditional(t *testing.T) {
-    OptimizeConditionals("./testdata/simple.go")
+	OptimizeConditionals("./testdata/simple.go")
 }
 
 func TestSimpleCodeOptimization(t *testing.T) {
-    codeBeforeOptimization := `package codeoptimizer
+	codeBeforeOptimization := `package codeoptimizer
 
 import (
     "fmt"
@@ -31,7 +31,7 @@ func testConditional(a string) {
 }
 
 `
-    codeAfterOptimization := `package codeoptimizer
+	codeAfterOptimization := `package codeoptimizer
 
 import (
     "fmt"
@@ -47,42 +47,41 @@ func testConditional(a string) {
 }
 
 `
-    pathDir := t.TempDir()
-    filePath := fmt.Sprintf("%s/simple.go", pathDir)
-    f, err := os.Create(filePath)
-    if err != nil {
-        t.Fatal("Should not fail")
-    }
-    defer f.Close()
-    _, err = f.Write([]byte(codeBeforeOptimization))
-    if err != nil {
-        t.Fatal("Should not fail")
-    }
+	pathDir := t.TempDir()
+	filePath := fmt.Sprintf("%s/simple.go", pathDir)
+	f, err := os.Create(filePath)
+	if err != nil {
+		t.Fatal("Should not fail")
+	}
+	defer f.Close()
+	_, err = f.Write([]byte(codeBeforeOptimization))
+	if err != nil {
+		t.Fatal("Should not fail")
+	}
 
-    pkgs := utils.LoadPackages(filePath)
+	pkgs := utils.LoadPackages(filePath)
 
-    for _, p := range pkgs {
-        for _, f := range p.Syntax {
-            src, err := os.ReadFile(p.GoFiles[0]) // there should only be one
-            if err != nil {
-                panic(err)
-            }
-            walker := NewWalker(p.Fset, f, p.TypesInfo, src)
-            ast.Walk(walker, f)
-            
-            rewrittenFile := string(walker.src)
-            if rewrittenFile != codeAfterOptimization {
-                diff := cmp.Diff(codeAfterOptimization, rewrittenFile)
-                t.Fatalf("Wrong output. \n %s\n", diff)
-            }
-        }
-    }
+	for _, p := range pkgs {
+		for _, f := range p.Syntax {
+			src, err := os.ReadFile(p.GoFiles[0]) // there should only be one
+			if err != nil {
+				panic(err)
+			}
+			walker := NewWalker(p.Fset, f, p.TypesInfo, src)
+			ast.Walk(walker, f)
+
+			rewrittenFile := string(walker.src)
+			if rewrittenFile != codeAfterOptimization {
+				diff := cmp.Diff(codeAfterOptimization, rewrittenFile)
+				t.Fatalf("Wrong output. \n %s\n", diff)
+			}
+		}
+	}
 }
-
 
 // Runtime.GOOS should not be rewritten
 func TestRuntimeGoos(t *testing.T) {
-    codeBeforeOptimization := `package codeoptimizer
+	codeBeforeOptimization := `package codeoptimizer
 
 import (
     "fmt"
@@ -99,7 +98,7 @@ func testConditional(a string) {
 }
 
 `
-    codeAfterOptimization := `package codeoptimizer
+	codeAfterOptimization := `package codeoptimizer
 
 import (
     "fmt"
@@ -116,34 +115,34 @@ func testConditional(a string) {
 }
 
 `
-    pathDir := t.TempDir()
-    filePath := fmt.Sprintf("%s/simple.go", pathDir)
-    f, err := os.Create(filePath)
-    if err != nil {
-        t.Fatal("Should not fail")
-    }
-    defer f.Close()
-    _, err = f.Write([]byte(codeBeforeOptimization))
-    if err != nil {
-        t.Fatal("Should not fail")
-    }
+	pathDir := t.TempDir()
+	filePath := fmt.Sprintf("%s/simple.go", pathDir)
+	f, err := os.Create(filePath)
+	if err != nil {
+		t.Fatal("Should not fail")
+	}
+	defer f.Close()
+	_, err = f.Write([]byte(codeBeforeOptimization))
+	if err != nil {
+		t.Fatal("Should not fail")
+	}
 
-    pkgs := utils.LoadPackages(filePath)
+	pkgs := utils.LoadPackages(filePath)
 
-    for _, p := range pkgs {
-        for _, f := range p.Syntax {
-            src, err := os.ReadFile(p.GoFiles[0]) // there should only be one
-            if err != nil {
-                panic(err)
-            }
-            walker := NewWalker(p.Fset, f, p.TypesInfo, src)
-            ast.Walk(walker, f)
-            
-            rewrittenFile := string(walker.src)
-            if rewrittenFile != codeAfterOptimization {
-                diff := cmp.Diff(codeAfterOptimization, rewrittenFile)
-                t.Fatalf("Wrong output. \n %s\n", diff)
-            }
-        }
-    }
+	for _, p := range pkgs {
+		for _, f := range p.Syntax {
+			src, err := os.ReadFile(p.GoFiles[0]) // there should only be one
+			if err != nil {
+				panic(err)
+			}
+			walker := NewWalker(p.Fset, f, p.TypesInfo, src)
+			ast.Walk(walker, f)
+
+			rewrittenFile := string(walker.src)
+			if rewrittenFile != codeAfterOptimization {
+				diff := cmp.Diff(codeAfterOptimization, rewrittenFile)
+				t.Fatalf("Wrong output. \n %s\n", diff)
+			}
+		}
+	}
 }
