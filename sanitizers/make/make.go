@@ -52,7 +52,7 @@ func (walker *MakeWalker) isSecondArgFileInfo(secondArg ast.Node) bool {
 	if err != nil {
 		return false
 	}
-	if typeName == "io/fs.FileInfo" {
+	if typeName == "io/fs.FileInfo" || typeName == "*archive/tar.Header" {
 		return true
 	}
 	return false
@@ -67,6 +67,7 @@ func (walker *MakeWalker) Visit(node ast.Node) ast.Visitor {
 		if _, ok := n.Fun.(*ast.Ident); ok {
 			// functions we are interested in:
 			// 1: make([]byte)
+			//fmt.Println(n.Fun.(*ast.Ident).Name)
 			if n.Fun.(*ast.Ident).Name == "make" {
 				// for now we just support the "len" arg of make():
 				if len(n.Args) == 2 {
@@ -81,6 +82,11 @@ func (walker *MakeWalker) Visit(node ast.Node) ast.Visitor {
 						if _, ok := secondArg.(*ast.SelectorExpr).X.(*ast.Ident); !ok {
 							return walker
 						}
+						/*fmt.Println("typeName:")
+						typeName, err := walker.typeName(secondArg.(*ast.SelectorExpr).X.(*ast.Ident))
+						if err == nil {
+							fmt.Println("typeName: ", typeName)
+						}*/
 						if walker.isSecondArgFileInfo(secondArg) {
 							// TODO: Refactor this part so it can be testec
 							currentFilePath := walker.fset.File(secondArg.Pos()).Name()
