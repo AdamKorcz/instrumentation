@@ -6,7 +6,6 @@ import (
 	"go/types"
 	"go/ast"
 	"os"
-	//"reflect"
 	"strings"
 	"github.com/AdamKorcz/instrumentation/utils"
 )
@@ -81,19 +80,22 @@ func (walker *Walker) Visit(node ast.Node) ast.Visitor {
 							return walker
 						}
 
-						yValue := stringLit.Value[1:len(stringLit.Value)-1]
-
 
 						baseOffset := walker.fset.File(n.Pos()).Base()
 						start := int(be.Pos()) - baseOffset + walker.additionalOffset
 						end := int(stringLit.End()) - baseOffset + walker.additionalOffset
-
-						//fmt.Println(start, end)
-						//currentFilePath := walker.fset.File(n.Pos()).Name()
 						currentFileContents := walker.src
-						//fmt.Println(string(currentFileContents))
 						conditionalStmtString := string(currentFileContents[start:end])
 						xString := strings.Split(conditionalStmtString, " ==")[0]
+						if xString == "runtime.GOOS" {
+							// There are some problems with runtime.GOOS,
+							// so we won't rewrite those cases.
+							return walker
+						}
+
+						yValue := stringLit.Value[1:len(stringLit.Value)-1]
+
+
 						fileContentsUntilConditional := string(currentFileContents[:start])
 						fileContentsAfterConditional := string(currentFileContents[end:])
 						
