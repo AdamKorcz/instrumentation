@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	instrmake "github.com/AdamKorcz/instrumentation/sanitizers/make"
-	instrIo "github.com/AdamKorcz/instrumentation/sanitizers/io"
-	"github.com/AdamKorcz/instrumentation/utils"
 	"github.com/AdamKorcz/instrumentation/codeoptimizer"
+	instrIo "github.com/AdamKorcz/instrumentation/sanitizers/io"
+	instrmake "github.com/AdamKorcz/instrumentation/sanitizers/make"
+	"github.com/AdamKorcz/instrumentation/utils"
 )
 
 var (
@@ -55,8 +55,8 @@ func getStringVersion(n ast.Node, src []byte, fset *token.FileSet) string {
 
 	snippetLength := int(end) - int(start)
 
-	snippetStart := fileAtPos.Offset(n.Pos())	
-	snippetEnd := snippetStart+snippetLength
+	snippetStart := fileAtPos.Offset(n.Pos())
+	snippetEnd := snippetStart + snippetLength
 
 	//fmt.Println(string(src[snippetStart:snippetEnd]))
 	startf2 := fset.Position(fileAtPos.Pos(snippetStart))
@@ -72,7 +72,6 @@ func getStringVersion(n ast.Node, src []byte, fset *token.FileSet) string {
 	returnString.WriteString("\"")
 	return returnString.String()
 }
-
 
 func (walker *Walker) rewriteReadAll(n ast.Node, aa *ast.SelectorExpr) {
 	apiName := aa.Sel.Name
@@ -232,6 +231,15 @@ func isGoFile(info os.FileInfo) bool {
 	return true
 }
 
+// Checks whether a path is a non-test go file
+func isFuzzer(info os.FileInfo) bool {
+	ext := filepath.Ext(info.Name())
+	if strings.Contains(ext, "fuzz") {
+		return true
+	}
+	return false
+}
+
 // Check whether a parsed file uses the "io" package
 func (walker *Walker) usesIoPackage(file *ast.File) bool {
 	return astutil.UsesImport(walker.file, "io")
@@ -389,6 +397,9 @@ func validateFilePath(path string, info os.FileInfo) error {
 	// Do low-cost check on imports
 	if !utils.CheckImports(path) {
 		return fmt.Errorf("Skip file")
+	}
+	if isFuzzer(info) {
+		return fmt.Errorf("Will not sanitize fuzzers")
 	}
 	return nil
 }
