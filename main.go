@@ -3,6 +3,7 @@ package main
 import (
 	//"bufio"
 	"bytes"
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/printer"
@@ -12,17 +13,21 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	//"reflect"
 	"strings"
 
-	instrmake "github.com/AdamKorcz/instrumentation/sanitizers/make"
-	instrIo "github.com/AdamKorcz/instrumentation/sanitizers/io"
-	"github.com/AdamKorcz/instrumentation/utils"
 	"github.com/AdamKorcz/instrumentation/codeoptimizer"
+	instrIo "github.com/AdamKorcz/instrumentation/sanitizers/io"
+	instrmake "github.com/AdamKorcz/instrumentation/sanitizers/make"
+	"github.com/AdamKorcz/instrumentation/utils"
 )
 
 var (
 	devMode      = false // false = overwrite files with new bug detectors
 	dummySnippet = "\"NotAvailable\""
+
+	targetDir     = flag.String("target_dir", "", "Path to directory to instrument")
+	checkIoLength = flag.Bool("check_io_length", true, "Check the length of IO reads")
 )
 
 type Walker struct {
@@ -55,8 +60,8 @@ func getStringVersion(n ast.Node, src []byte, fset *token.FileSet) string {
 
 	snippetLength := int(end) - int(start)
 
-	snippetStart := fileAtPos.Offset(n.Pos())	
-	snippetEnd := snippetStart+snippetLength
+	snippetStart := fileAtPos.Offset(n.Pos())
+	snippetEnd := snippetStart + snippetLength
 
 	//fmt.Println(string(src[snippetStart:snippetEnd]))
 	startf2 := fset.Position(fileAtPos.Pos(snippetStart))
@@ -72,7 +77,6 @@ func getStringVersion(n ast.Node, src []byte, fset *token.FileSet) string {
 	returnString.WriteString("\"")
 	return returnString.String()
 }
-
 
 func (walker *Walker) rewriteReadAll(n ast.Node, aa *ast.SelectorExpr) {
 	apiName := aa.Sel.Name
@@ -96,8 +100,12 @@ func (walker *Walker) rewriteReadAll(n ast.Node, aa *ast.SelectorExpr) {
 		aa.X.(*ast.Ident).Name = "ioutil2"
 	}
 
-	// Add call param
+	var checkLength bool
+	checkLength = *checkIoLength
+
+	// Add params
 	n.(*ast.CallExpr).Args = append(n.(*ast.CallExpr).Args, ast.NewIdent(codeSnippet))
+	n.(*ast.CallExpr).Args = append(n.(*ast.CallExpr).Args, ast.NewIdent(fmt.Sprintf("%t", checkLength)))
 }
 
 func (walker *Walker) rewriteBufferBytes(n ast.Node, aa *ast.SelectorExpr) {
@@ -353,6 +361,7 @@ func (walker *Walker) UpdateSrcFiles(path string) {
 }
 
 func addRemainingSanitizers(path string) {
+	fmt.Println("path: ", path)
 	pkgs := utils.LoadPackages(path)
 	for _, p := range pkgs {
 		for _, f := range p.Syntax {
@@ -430,10 +439,13 @@ func optimize(p string) {
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		panic("A path should be added")
+	flag.Parse()
+
+	if *targetDir == "" {
+		panic("Need a dir to instrument")
 	}
-	dir := os.Args[1]
+
+	dir := *targetDir
 
 	optimize(dir)
 
