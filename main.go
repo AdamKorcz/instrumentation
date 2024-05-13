@@ -240,6 +240,15 @@ func isGoFile(info os.FileInfo) bool {
 	return true
 }
 
+// Checks whether a path is a non-test go file
+func isFuzzer(info os.FileInfo) bool {
+	ext := filepath.Ext(info.Name())
+	if strings.Contains(ext, "fuzz") {
+		return true
+	}
+	return false
+}
+
 // Check whether a parsed file uses the "io" package
 func (walker *Walker) usesIoPackage(file *ast.File) bool {
 	return astutil.UsesImport(walker.file, "io")
@@ -398,6 +407,9 @@ func validateFilePath(path string, info os.FileInfo) error {
 	// Do low-cost check on imports
 	if !utils.CheckImports(path) {
 		return fmt.Errorf("Skip file")
+	}
+	if isFuzzer(info) {
+		return fmt.Errorf("Will not sanitize fuzzers")
 	}
 	return nil
 }
